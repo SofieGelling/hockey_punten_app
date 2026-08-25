@@ -1,6 +1,6 @@
-# Hockey TeamApp V2 – visueel prototype
+# Hockey TeamApp V2.1 – visueel prototype
 
-Deze map is een aparte V2 om eerst de nieuwe app-structuur te bekijken.
+Deze map is een aparte V2.1 om eerst de nieuwe app-structuur te bekijken.
 
 ## Starten
 
@@ -31,3 +31,32 @@ Of dubbelklik op `start_app.command` op macOS.
 - eerste statistiekenpagina
 
 Dit is bewust een ontwerp/prototype. De data staat lokaal in SQLite.
+
+
+## V2.1 wijzigingen
+- Fout met `st.info(+recommendation())` opgelost.
+- Tekst `(zichtbaar voor iedereen)` verwijderd bij reden invullen.
+- Een antwoord `Ik kan niet` kan later worden gewijzigd naar `Toch wel kunnen`.
+- De opgegeven reden kan later worden bewerkt.
+
+
+## V2.2 wijzigingen
+- Spelercards op Home en in de Ranglijst zijn klikbaar.
+- Klik op een speler om diens punten, rang en activiteiten te bekijken.
+- Pagina Statistieken is verwijderd.
+- Alle date_input-velden in Toevoegen hebben unieke Streamlit keys.
+- TypeError bij recommendation is opgelost.
+- Bij 'Ik kan niet' kan de speler later de reden wijzigen of alsnog aangeven te kunnen.
+- Het label bij de reden vermeldt niet meer '(zichtbaar voor iedereen)'.
+
+
+## V2.3
+- Onderste mobiele navigatie verwijderd.
+- Alle navigatie staat in de inklapbare linker sidebar.
+- Sidebar opent standaard op desktop; op telefoon blijft deze via het hamburgericoon bereikbaar.
+
+
+## V2.4
+- De huidige pagina en ingelogde naam blijven behouden na verversen via URL-queryparameters.
+- Ook een geopende spelercard en brainstormmap worden na verversen hersteld.
+- Op telefoons is extra ruimte boven de content toegevoegd zodat de Streamlit-balk de paginatitel niet bedekt.
