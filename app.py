@@ -1,6 +1,7 @@
 from datetime import date
 import calendar
 import json
+import mimetypes
 from urllib.parse import urlencode
 
 import altair as alt
@@ -9,404 +10,1060 @@ import streamlit as st
 
 import db
 
-st.set_page_config(page_title='TeamApp', page_icon='🏑', layout='wide', initial_sidebar_state='auto')
+st.set_page_config(page_title="TeamApp", page_icon="🏑", layout="wide", initial_sidebar_state="auto")
 db.init_db()
 
 CATEGORY = {
-    'training': ('#EAF3FF','🔵'), 'fluiten': ('#FFF7D6','🟡'), 'team': ('#FDECF4','🩷'),
-    'geld': ('#EAF8EE','🟢'), 'club': ('#F3ECFF','🟣')
+    "training": ("#EAF3FF", "🔵"),
+    "fluiten": ("#FFF7D6", "🟡"),
+    "team": ("#FDECF4", "🩷"),
+    "geld": ("#EAF8EE", "🟢"),
+    "club": ("#F3ECFF", "🟣"),
 }
 
-st.markdown('''
+VALID_PAGES = {
+    "Home",
+    "Teamrekening",
+    "Agenda",
+    "Ideeën",
+    "Ranglijst punten",
+    "Activiteiten",
+    "Meldingen",
+    "Profiel",
+    "Toevoegen",
+    "Wijzigingsverzoeken",
+    "Instellingen",
+}
+
+PAGE_ALIASES = {"Ranglijst": "Ranglijst punten"}
+
+st.markdown(
+    """
 <style>
 .stApp{background:linear-gradient(180deg,#F7FBFF 0%,#FFFFFF 38%);color:#13243A}
-.block-container{max-width:860px;padding-top:1.1rem;padding-bottom:2rem}
+.block-container{max-width:900px;padding-top:1.55rem;padding-bottom:2rem}
 [data-testid="stSidebar"]{background:#F2F7FE}
-.sidebar-link{display:block;text-decoration:none!important;color:#18304f!important;background:white;border:1px solid #dfeaf7;border-radius:13px;padding:.7rem .85rem;margin:.35rem 0;font-weight:700}
+.sidebar-name{font-size:1.4rem;font-weight:800;color:#13243A;line-height:1.1;margin:.15rem 0 .85rem}
+.sidebar-link{display:block;text-decoration:none!important;color:#18304f!important;background:white;border:1px solid #dfeaf7;border-radius:13px;padding:.72rem .85rem;margin:.35rem 0;font-weight:700}
 .sidebar-link.active{background:#eaf3ff;border-color:#a8c9f7;color:#235fae!important}
-.hero{background:linear-gradient(135deg,#2F6FED,#76A9FF);color:white;padding:20px;border-radius:22px;box-shadow:0 10px 30px rgba(47,111,237,.18)}
+.sidebar-link.subtle{background:#eef6ff;border-color:#d7e7fb;color:#3567a8!important;margin-top:.75rem}
 .card{background:#fff;border:1px solid #DDE9F7;border-radius:18px;padding:15px 16px;margin:9px 0;box-shadow:0 5px 20px rgba(40,78,120,.055)}
 .soft{background:#F5F9FF;border:1px solid #E2ECFA;border-radius:16px;padding:14px;margin:8px 0}
-.section{font-size:1.16rem;font-weight:800;margin-top:1.45rem;margin-bottom:.35rem}.muted{color:#718198;font-size:.9rem}
+.section{font-size:1.12rem;font-weight:800;margin-top:1.35rem;margin-bottom:.4rem}
+.subsection-title{font-size:1.02rem;font-weight:800;color:#18304f;margin:.8rem 0 .35rem}
+.muted{color:#718198;font-size:.9rem}
 .badge{display:inline-block;background:#EEF5FF;color:#2F6FED;padding:4px 9px;border-radius:999px;font-size:.78rem;font-weight:700}
+.score-badge{display:inline-block;background:#edf6ff;color:#235fae;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:800}
 .task{border-radius:16px;padding:14px;margin:8px 0;border:1px solid rgba(50,80,120,.08)}
 .metric-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:.65rem 0 1rem}
 .mini-metric{background:white;border:1px solid #dfeaf7;border-radius:16px;padding:12px 9px;text-align:center;box-shadow:0 4px 14px rgba(40,78,120,.045)}
-.mini-metric .label{font-size:.77rem;color:#718198;margin-bottom:3px}.mini-metric .value{font-size:1.55rem;font-weight:850;color:#13243A}
-.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.calhead{text-align:center;font-size:.72rem;color:#7A899C;font-weight:700}.day{min-height:68px;border:1px solid #E4ECF7;border-radius:12px;padding:6px;background:white;font-size:.78rem}.day.empty{background:transparent;border-color:transparent}.dots{font-size:.65rem;line-height:1.2;margin-top:4px}
-.money-positive{color:#14804a;font-weight:800}.money-negative{color:#b54747;font-weight:800}
-div[data-testid="stButton"]>button,div[data-testid="stFormSubmitButton"]>button{border-radius:14px;min-height:42px;font-weight:700}
+.mini-metric .label{font-size:.77rem;color:#718198;margin-bottom:3px}
+.mini-metric .value{font-size:1.45rem;font-weight:850;color:#13243A}
+.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.calhead{text-align:center;font-size:.72rem;color:#7A899C;font-weight:700}
+.day{min-height:68px;border:1px solid #E4ECF7;border-radius:12px;padding:6px;background:white;font-size:.78rem}
+.day.empty{background:transparent;border-color:transparent}
+.dots{font-size:.65rem;line-height:1.2;margin-top:4px}
+.money-positive{color:#14804a;font-weight:800}
+.money-negative{color:#b54747;font-weight:800}
+.status-pill{display:inline-block;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:800}
+.status-pill.pending{background:#FFF7D6;color:#8E6700}
+.status-pill.approved{background:#EAF8EE;color:#14804A}
+.status-pill.rejected{background:#FDECEC;color:#B54747}
+.idea-meta{display:flex;gap:.55rem;align-items:center;flex-wrap:wrap}
+.page-title{margin:.1rem 0 .7rem;font-size:1.8rem;font-weight:850;color:#13243A}
+div[data-testid="stButton"]>button,div[data-testid="stFormSubmitButton"]>button,div[data-testid="stDownloadButton"]>button{border-radius:14px;min-height:42px;font-weight:700}
 @media(max-width:700px){
-  .block-container{padding-left:.85rem;padding-right:.85rem;padding-top:5.3rem!important}
-  .hero{padding:17px;border-radius:19px}
-  .metric-row{gap:7px}.mini-metric{padding:10px 4px;border-radius:14px}.mini-metric .label{font-size:.68rem}.mini-metric .value{font-size:1.25rem}
+  .block-container{padding-left:.9rem;padding-right:.9rem;padding-top:6.05rem!important}
+  .page-title{font-size:1.52rem}
+  .metric-row{gap:7px}
+  .mini-metric{padding:10px 4px;border-radius:14px}
+  .mini-metric .label{font-size:.68rem}
+  .mini-metric .value{font-size:1.18rem}
   .day{min-height:52px;padding:4px;font-size:.7rem}
 }
 </style>
-''', unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-VALID_PAGES = {'Home','Agenda','Toevoegen','Ideeën','Ranglijst','Activiteiten','Meldingen','Profiel','Teamrekening','Wijzigingsverzoeken','Instellingen'}
 
 def q(name, default=None):
-    v=st.query_params.get(name,default)
-    return v[0] if isinstance(v,list) and v else v
+    value = st.query_params.get(name, default)
+    return value[0] if isinstance(value, list) and value else value
+
 
 def nav_url(page, **extra):
-    params={'page':page}
-    if 'player_id' in st.session_state: params['user']=str(st.session_state.player_id)
-    params.update({k:str(v) for k,v in extra.items() if v is not None})
-    return '?' + urlencode(params)
+    params = {"page": page}
+    if "player_id" in st.session_state:
+        params["user"] = str(st.session_state.player_id)
+    params.update({key: str(val) for key, val in extra.items() if val is not None})
+    return "?" + urlencode(params)
+
 
 def goto(page, **extra):
     st.query_params.clear()
-    st.query_params['page']=page
-    st.query_params['user']=str(st.session_state.player_id)
-    for k,v in extra.items(): st.query_params[k]=str(v)
-    st.session_state.page=page
+    st.query_params["page"] = page
+    st.query_params["user"] = str(st.session_state.player_id)
+    for key, val in extra.items():
+        st.query_params[key] = str(val)
+    st.session_state.page = page
     st.rerun()
 
-def login():
-    st.markdown('## 🏑 TeamApp')
-    st.caption('Kies je naam om in te loggen.')
-    players=db.get_players(); names=[p['name'] for p in players]
-    name=st.selectbox('Wie ben je?',names,index=None,placeholder='Kies je naam',key='login_name')
-    if st.button('Inloggen',type='primary',use_container_width=True,disabled=name is None):
-        st.session_state.player_id=next(p['id'] for p in players if p['name']==name)
-        goto('Home')
 
-if 'player_id' not in st.session_state:
-    try:
-        saved=int(q('user')) if q('user') else None
-    except Exception:
-        saved=None
-    if saved and db.get_player(saved): st.session_state.player_id=saved
-if 'player_id' not in st.session_state:
-    login(); st.stop()
+def is_admin(current_player):
+    return current_player.get("role") == "admin"
 
-player=db.get_player(st.session_state.player_id)
-page=q('page','Home')
-if page not in VALID_PAGES: page='Home'
-st.session_state.page=page
 
-with st.sidebar:
-    st.markdown(f"### 👋 {player['name']}")
-    st.caption('Beheerder' if player['role']=='admin' else 'Speler')
-    st.caption('MENU')
-    nav=[('🏠 Home','Home'),('📅 Agenda','Agenda'),('➕ Toevoegen','Toevoegen'),('💡 Ideeën','Ideeën'),('⭐ Ranglijst','Ranglijst'),('📝 Activiteiten','Activiteiten'),('🔔 Meldingen','Meldingen'),('👤 Profiel','Profiel'),('💰 Teamrekening','Teamrekening')]
-    for label,p in nav:
-        cls='sidebar-link active' if page==p else 'sidebar-link'
-        st.markdown(f'<a class="{cls}" href="{nav_url(p)}" target="_self">{label}</a>',unsafe_allow_html=True)
-    if player['role']=='admin':
-        st.divider(); st.caption('BEHEER')
-        for label,p in [('✅ Wijzigingsverzoeken','Wijzigingsverzoeken'),('⚙️ Activiteiten instellen','Instellingen')]:
-            cls='sidebar-link active' if page==p else 'sidebar-link'
-            st.markdown(f'<a class="{cls}" href="{nav_url(p)}" target="_self">{label}</a>',unsafe_allow_html=True)
-    st.divider()
-    if st.button('🚪 Uitloggen',use_container_width=True,key='logout'):
-        st.session_state.clear(); st.query_params.clear(); st.rerun()
+def is_treasurer(current_player):
+    return current_player.get("name") == "Kieft"
 
-lb=db.leaderboard(); my=next((r for r in lb if r['id']==player['id']),None)
 
-def metric_strip(points,rank,activities):
-    st.markdown(f'''<div class="metric-row">
-      <div class="mini-metric"><div class="label">Punten</div><div class="value">{points}</div></div>
-      <div class="mini-metric"><div class="label">Rang</div><div class="value">#{rank}</div></div>
-      <div class="mini-metric"><div class="label">Activiteiten</div><div class="value">{activities}</div></div>
-    </div>''',unsafe_allow_html=True)
+def can_review_expenses(current_player):
+    return is_admin(current_player) or is_treasurer(current_player)
 
-def recommendation():
-    if not lb: return 'Nog geen gegevens.'
-    low=min(r['points'] for r in lb); names=[r['name'] for r in lb if r['points']==low]
-    return f"**{' & '.join(names)}** {'heeft' if len(names)==1 else 'hebben'} nu de minste punten ({low})."
 
-@st.dialog('Spelerdetails')
+def format_euro(value):
+    return f"€ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def format_status(status):
+    return {
+        "pending": "Te controleren",
+        "approved": "Goedgekeurd",
+        "rejected": "Afgewezen",
+    }.get(status, status or "Onbekend")
+
+
+def receipt_label(status):
+    return {
+        "uploaded": "Bonnetje aanwezig",
+        "lost": "Bonnetje kwijt",
+        None: "Geen bonstatus",
+        "": "Geen bonstatus",
+    }.get(status, "Geen bonstatus")
+
+
+def badge_status(status):
+    return f'<span class="status-pill {status}">{format_status(status)}</span>'
+
+
+def guess_mime(file_name):
+    mime, _ = mimetypes.guess_type(file_name or "")
+    return mime or "application/octet-stream"
+
+
+def render_page_title(text):
+    st.markdown(f'<div class="page-title">{text}</div>', unsafe_allow_html=True)
+
+
+def metric_strip(points, rank, activities):
+    st.markdown(
+        f"""
+        <div class="metric-row">
+          <div class="mini-metric"><div class="label">Punten</div><div class="value">{points}</div></div>
+          <div class="mini-metric"><div class="label">Rang</div><div class="value">#{rank}</div></div>
+          <div class="mini-metric"><div class="label">Activiteiten</div><div class="value">{activities}</div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def finance_metric_strip(balance, income, expense):
+    st.markdown(
+        f"""
+        <div class="metric-row">
+          <div class="mini-metric"><div class="label">Saldo</div><div class="value">{balance}</div></div>
+          <div class="mini-metric"><div class="label">Inkomsten</div><div class="value">{income}</div></div>
+          <div class="mini-metric"><div class="label">Uitgaven</div><div class="value">{expense}</div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def recommendation(leaderboard_rows):
+    if not leaderboard_rows:
+        return "Nog geen gegevens."
+    lowest = min(row["points"] for row in leaderboard_rows)
+    names = [row["name"] for row in leaderboard_rows if row["points"] == lowest]
+    verb = "heeft" if len(names) == 1 else "hebben"
+    return f"**{' & '.join(names)}** {verb} nu de minste punten ({lowest})."
+
+
+def money_line_chart(dataframe, x_field, series_field, value_field, tooltip_fields):
+    return (
+        alt.Chart(dataframe)
+        .mark_line(interpolate="monotone", point=True, strokeWidth=3)
+        .encode(
+            x=alt.X(x_field, title=None),
+            y=alt.Y(value_field, title="Bedrag"),
+            color=alt.Color(
+                series_field,
+                scale=alt.Scale(domain=["Inkomsten", "Uitgaven", "Saldo"], range=["#2F6FED", "#D96B6B", "#14804A"]),
+                title=None,
+            ),
+            tooltip=tooltip_fields,
+        )
+        .properties(height=280)
+        .interactive()
+    )
+
+
+def single_line_chart(dataframe, x_field, y_field, color="#2F6FED", tooltip_fields=None):
+    tooltip_fields = tooltip_fields or [x_field, y_field]
+    return (
+        alt.Chart(dataframe)
+        .mark_line(interpolate="monotone", point=True, strokeWidth=3, color=color)
+        .encode(x=alt.X(x_field, title=None), y=alt.Y(y_field, title="Saldo"), tooltip=tooltip_fields)
+        .properties(height=280)
+        .interactive()
+    )
+
+
+def render_transaction_card(transaction, show_receipt=False, receipt_key_prefix="receipt"):
+    amount_class = "money-positive" if transaction["transaction_type"] == "income" else "money-negative"
+    sign = "+" if transaction["transaction_type"] == "income" else "−"
+    meta = [
+        transaction["transaction_date"],
+        transaction.get("category") or "Overig",
+        transaction.get("paid_by_name") or "Team",
+    ]
+    if transaction.get("submitted_by_name"):
+        meta.append(f"Ingediend door {transaction['submitted_by_name']}")
+    st.markdown(
+        (
+            f'<div class="card"><b>{transaction["description"]}</b>'
+            f'<span class="{amount_class}" style="float:right">{sign} {format_euro(transaction["amount"])}</span>'
+            f'<br><span class="muted">{" · ".join(meta)}</span>'
+            f'<br><span class="muted">{receipt_label(transaction.get("receipt_status"))}</span>'
+            f'<br>{badge_status(transaction.get("review_status") or "approved")}</div>'
+        ),
+        unsafe_allow_html=True,
+    )
+    if show_receipt and transaction.get("receipt_data"):
+        st.download_button(
+            "Bonnetje bekijken",
+            data=transaction["receipt_data"],
+            file_name=transaction.get("receipt_name") or f"bonnetje-{transaction['id']}",
+            mime=guess_mime(transaction.get("receipt_name")),
+            key=f"{receipt_key_prefix}_{transaction['id']}",
+            use_container_width=True,
+        )
+
+
+def player_card(row, rank, prefix):
+    if st.button(
+        f"#{rank}  {row['name']}   ·   {row['points']} pt\n{row['activities']} activiteiten  ›",
+        key=f"{prefix}_{row['id']}",
+        use_container_width=True,
+    ):
+        player_dialog(row["id"])
+
+
+@st.dialog("Spelerdetails")
 def player_dialog(player_id):
-    selected=db.get_player(player_id); row=next((r for r in lb if r['id']==player_id),None)
+    selected = db.get_player(player_id)
+    row = next((entry for entry in lb if entry["id"] == player_id), None)
     if not selected or not row:
-        st.warning('Speler niet gevonden.'); return
-    rank=lb.index(row)+1
+        st.warning("Speler niet gevonden.")
+        return
+    rank = lb.index(row) + 1
     st.markdown(f"### 👤 {selected['name']}")
-    metric_strip(row['points'],rank,row['activities'])
-    st.markdown('#### Punten per activiteit')
-    for b in db.breakdown(player_id):
-        if b['count']:
-            st.markdown(f'<div class="card">{b["icon"]} <b>{b["name"]}</b><span style="float:right"><b>{b["points"]} pt</b></span><br><span class="muted">{b["count"]}× gedaan</span></div>',unsafe_allow_html=True)
-    st.markdown('#### Activiteiten')
-    acts=db.get_activities(player_id=player_id)
-    if not acts: st.caption('Nog geen activiteiten.')
-    for a in acts[:12]:
-        try: vals=json.loads(a.get('field_values_json') or '{}')
-        except Exception: vals={}
-        details=' · '.join(f'{k}: {v}' for k,v in vals.items())
-        extra=' · '.join(x for x in [details,a.get('description') or ''] if x)
-        st.markdown(f'<div class="card">{a["icon"]} <b>{a["activity_name"]}</b><span style="float:right"><b>+{a["points"]}</b></span><br><span class="muted">{a["activity_date"]}{" · "+extra if extra else ""}</span></div>',unsafe_allow_html=True)
+    metric_strip(row["points"], rank, row["activities"])
+    st.markdown("#### Punten per activiteit")
+    for breakdown_row in db.breakdown(player_id):
+        if breakdown_row["count"]:
+            st.markdown(
+                f'<div class="card">{breakdown_row["icon"]} <b>{breakdown_row["name"]}</b>'
+                f'<span style="float:right"><b>{breakdown_row["points"]} pt</b></span>'
+                f'<br><span class="muted">{breakdown_row["count"]}× gedaan</span></div>',
+                unsafe_allow_html=True,
+            )
+    st.markdown("#### Activiteiten")
+    activities = db.get_activities(player_id=player_id)
+    if not activities:
+        st.caption("Nog geen activiteiten.")
+    for activity in activities[:12]:
+        try:
+            values = json.loads(activity.get("field_values_json") or "{}")
+        except Exception:
+            values = {}
+        details = " · ".join(f"{key}: {value}" for key, value in values.items())
+        extra = " · ".join(part for part in [details, activity.get("description") or ""] if part)
+        st.markdown(
+            f'<div class="card">{activity["icon"]} <b>{activity["activity_name"]}</b>'
+            f'<span style="float:right"><b>+{activity["points"]}</b></span>'
+            f'<br><span class="muted">{activity["activity_date"]}{" · " + extra if extra else ""}</span></div>',
+            unsafe_allow_html=True,
+        )
 
-def player_card(r, rank, prefix):
-    if st.button(f"#{rank}  {r['name']}   ·   {r['points']} pt\n{r['activities']} activiteiten  ›",key=f'{prefix}_{r["id"]}',use_container_width=True):
-        player_dialog(r['id'])
 
 def activity_form():
-    types=db.get_activity_types(); labels=[f"{t['icon']} {t['name']}" for t in types]
-    choice=st.selectbox('Activiteit',labels,key='activity_type'); t=types[labels.index(choice)]
-    total=t['base_points']; values={}
-    if t['base_points']: st.caption(f"Basispunten: **{t['base_points']}**")
-    for f in db.get_fields(t['id']):
-        if f['field_type']=='select' and f['options']:
-            opts=[f"{o['label']} · +{o['points']} pt" for o in f['options']]
-            sel=st.selectbox(f['label'],opts,key=f"activity_field_{f['id']}"); o=f['options'][opts.index(sel)]
-            values[f['label']]=o['label']; total+=o['points']
-    d=st.date_input('Datum',date.today(),key='activity_date')
-    desc=st.text_area('Beschrijving',placeholder='Bijv. sponsoractie · €450 opgehaald',key='activity_desc')
-    st.info(f'Deze activiteit levert **{total} punten** op en staat direct in je overzicht.')
-    if st.button('Activiteit opslaan',type='primary',use_container_width=True,key='activity_save'):
-        db.add_activity(player['id'],t['id'],d,desc,values,total); st.success('Opgeslagen!'); st.rerun()
+    types = db.get_activity_types()
+    if not types:
+        st.warning("Er zijn nog geen activiteitstypes ingesteld.")
+        return
+    labels = [f"{row['icon']} {row['name']}" for row in types]
+    choice = st.selectbox("Activiteit", labels, key="activity_type")
+    activity_type = types[labels.index(choice)]
+    total = activity_type["base_points"]
+    values = {}
+    if activity_type["base_points"]:
+        st.caption(f"Basispunten: **{activity_type['base_points']}**")
+    for field in db.get_fields(activity_type["id"]):
+        if field["field_type"] == "select" and field["options"]:
+            options = [f"{option['label']} · +{option['points']} pt" for option in field["options"]]
+            selected = st.selectbox(field["label"], options, key=f"activity_field_{field['id']}")
+            option = field["options"][options.index(selected)]
+            values[field["label"]] = option["label"]
+            total += option["points"]
+    activity_date = st.date_input("Datum", date.today(), key="activity_date")
+    description = st.text_area("Beschrijving", placeholder="Bijv. sponsoractie · €450 opgehaald", key="activity_desc")
+    st.info(f"Deze activiteit levert **{total} punten** op en staat direct in je overzicht.")
+    if st.button("Activiteit opslaan", type="primary", use_container_width=True, key="activity_save"):
+        db.add_activity(player["id"], activity_type["id"], activity_date, description, values, total)
+        st.success("Opgeslagen!")
+        st.rerun()
 
-def task_card(t, personal=False):
-    bg,dot=CATEGORY.get(t['category'],('#F5F9FF','🔹')); ass=t['assignments']; names=', '.join(a['name'] for a in ass) or 'Nog niemand'
-    st.markdown(f'''<div class="task" style="background:{bg}"><b>{dot} {t['title']}</b><br><span class="muted">{t['task_date']} {t['task_time'] or ''} · {names}</span><br>{t['description'] or ''}</div>''',unsafe_allow_html=True)
-    if not personal: return
-    mine=next((a for a in ass if a['player_id']==player['id']),None)
-    if not mine: return
-    response=mine['response']
-    if response=='pending':
-        c1,c2=st.columns(2)
-        if c1.button('✓ Ik kan',key=f'can_{t["id"]}',use_container_width=True): db.set_task_response(t['id'],player['id'],'can'); st.rerun()
-        if c2.button('✕ Ik kan niet',key=f'cant_{t["id"]}',use_container_width=True): st.session_state[f'cant_reason_{t["id"]}']=True
-        if st.session_state.get(f'cant_reason_{t["id"]}'):
-            reason=st.text_input('Reden',key=f'cant_reason_text_{t["id"]}')
-            if st.button('Opslaan',key=f'cant_reason_save_{t["id"]}',disabled=not reason): db.set_task_response(t['id'],player['id'],'cannot',reason); st.rerun()
-    elif response=='cannot':
+
+def task_card(task, personal=False):
+    bg_color, dot = CATEGORY.get(task["category"], ("#F5F9FF", "🔹"))
+    assignees = task["assignments"]
+    names = ", ".join(assignment["name"] for assignment in assignees) or "Nog niemand"
+    st.markdown(
+        f'<div class="task" style="background:{bg_color}"><b>{dot} {task["title"]}</b>'
+        f'<br><span class="muted">{task["task_date"]} {task["task_time"] or ""} · {names}</span>'
+        f'<br>{task["description"] or ""}</div>',
+        unsafe_allow_html=True,
+    )
+    if not personal:
+        return
+    mine = next((assignment for assignment in assignees if assignment["player_id"] == player["id"]), None)
+    if not mine:
+        return
+    response = mine["response"]
+    if response == "pending":
+        col1, col2 = st.columns(2)
+        if col1.button("✓ Ik kan", key=f"can_{task['id']}", use_container_width=True):
+            db.set_task_response(task["id"], player["id"], "can")
+            st.rerun()
+        if col2.button("✕ Ik kan niet", key=f"cant_{task['id']}", use_container_width=True):
+            st.session_state[f"cant_reason_{task['id']}"] = True
+        if st.session_state.get(f"cant_reason_{task['id']}"):
+            reason = st.text_input("Reden", key=f"cant_reason_text_{task['id']}")
+            if st.button("Opslaan", key=f"cant_reason_save_{task['id']}", disabled=not reason):
+                db.set_task_response(task["id"], player["id"], "cannot", reason)
+                st.rerun()
+    elif response == "cannot":
         st.warning(f"Kan niet — {mine['reason']}")
-        c1,c2=st.columns(2)
-        if c1.button('✓ Toch wel kunnen',key=f'switch_can_{t["id"]}',use_container_width=True): db.set_task_response(t['id'],player['id'],'can',''); st.rerun()
-        if c2.button('✏️ Reden wijzigen',key=f'edit_reason_{t["id"]}',use_container_width=True): st.session_state[f'edit_cant_{t["id"]}']=True
-        if st.session_state.get(f'edit_cant_{t["id"]}'):
-            reason=st.text_input('Reden aanpassen',value=mine['reason'] or '',key=f'edit_cant_text_{t["id"]}')
-            if st.button('Wijziging opslaan',key=f'edit_cant_save_{t["id"]}',disabled=not reason): db.set_task_response(t['id'],player['id'],'cannot',reason); st.rerun()
+        col1, col2 = st.columns(2)
+        if col1.button("✓ Toch wel kunnen", key=f"switch_can_{task['id']}", use_container_width=True):
+            db.set_task_response(task["id"], player["id"], "can", "")
+            st.rerun()
+        if col2.button("✏️ Reden wijzigen", key=f"edit_reason_{task['id']}", use_container_width=True):
+            st.session_state[f"edit_cant_{task['id']}"] = True
+        if st.session_state.get(f"edit_cant_{task['id']}"):
+            reason = st.text_input("Reden aanpassen", value=mine["reason"] or "", key=f"edit_cant_text_{task['id']}")
+            if st.button("Wijziging opslaan", key=f"edit_cant_save_{task['id']}", disabled=not reason):
+                db.set_task_response(task["id"], player["id"], "cannot", reason)
+                st.rerun()
     else:
-        st.success('Je hebt aangegeven dat je kunt.')
-        c1,c2=st.columns(2)
-        if c1.button('✏️ Antwoord wijzigen',key=f'change_can_{t["id"]}',use_container_width=True): st.session_state[f'change_can_{t["id"]}']=True
-        if not mine['completed'] and c2.button('✓ Mijn deel klaar',key=f'done_{t["id"]}',use_container_width=True): db.set_assignment_completed(t['id'],player['id']); st.rerun()
-        if st.session_state.get(f'change_can_{t["id"]}'):
-            reason=st.text_input('Waarom kun je toch niet?',key=f'change_can_reason_{t["id"]}')
-            c3,c4=st.columns(2)
-            if c3.button('Opslaan als kan niet',key=f'change_can_save_{t["id"]}',disabled=not reason,use_container_width=True): db.set_task_response(t['id'],player['id'],'cannot',reason); st.rerun()
-            if c4.button('Annuleren',key=f'change_can_cancel_{t["id"]}',use_container_width=True): st.session_state.pop(f'change_can_{t["id"]}',None); st.rerun()
+        st.success("Je hebt aangegeven dat je kunt.")
+        col1, col2 = st.columns(2)
+        if col1.button("✏️ Antwoord wijzigen", key=f"change_can_{task['id']}", use_container_width=True):
+            st.session_state[f"change_can_{task['id']}"] = True
+        if not mine["completed"] and col2.button("✓ Mijn deel klaar", key=f"done_{task['id']}", use_container_width=True):
+            db.set_assignment_completed(task["id"], player["id"])
+            st.rerun()
+        if st.session_state.get(f"change_can_{task['id']}"):
+            reason = st.text_input("Waarom kun je toch niet?", key=f"change_can_reason_{task['id']}")
+            col3, col4 = st.columns(2)
+            if col3.button("Opslaan als kan niet", key=f"change_can_save_{task['id']}", disabled=not reason, use_container_width=True):
+                db.set_task_response(task["id"], player["id"], "cannot", reason)
+                st.rerun()
+            if col4.button("Annuleren", key=f"change_can_cancel_{task['id']}", use_container_width=True):
+                st.session_state.pop(f"change_can_{task['id']}", None)
+                st.rerun()
 
-if page=='Home':
-    st.markdown(f"## Hoi {player['name']} 👋")
-    pts=my['points'] if my else 0; rank=lb.index(my)+1 if my in lb else '—'; acts=my['activities'] if my else 0
-    metric_strip(pts,rank,acts)
-    st.markdown('<div class="section">Komende taken voor jou</div>',unsafe_allow_html=True)
-    mine_tasks=db.tasks_for_player(player['id'])[:3]
+
+def login():
+    render_page_title("TeamApp")
+    st.caption("Kies je naam om in te loggen.")
+    players = db.get_players()
+    names = [entry["name"] for entry in players]
+    name = st.selectbox("Wie ben je?", names, index=None, placeholder="Kies je naam", key="login_name")
+    if st.button("Inloggen", type="primary", use_container_width=True, disabled=name is None):
+        st.session_state.player_id = next(entry["id"] for entry in players if entry["name"] == name)
+        goto("Home")
+
+
+if "player_id" not in st.session_state:
+    try:
+        saved = int(q("user")) if q("user") else None
+    except Exception:
+        saved = None
+    if saved and db.get_player(saved):
+        st.session_state.player_id = saved
+
+if "player_id" not in st.session_state:
+    login()
+    st.stop()
+
+player = db.get_player(st.session_state.player_id)
+if not player:
+    st.session_state.clear()
+    st.query_params.clear()
+    login()
+    st.stop()
+
+page = PAGE_ALIASES.get(q("page", "Home"), q("page", "Home"))
+if page not in VALID_PAGES:
+    page = "Home"
+st.session_state.page = page
+
+with st.sidebar:
+    st.markdown(f'<div class="sidebar-name">{player["name"]}</div>', unsafe_allow_html=True)
+    menu_items = [
+        ("Home", "Home"),
+        ("Teamrekening", "Teamrekening"),
+        ("Agenda", "Agenda"),
+        ("Ideeën", "Ideeën"),
+        ("Ranglijst punten", "Ranglijst punten"),
+        ("Activiteiten", "Activiteiten"),
+        ("Meldingen", "Meldingen"),
+    ]
+    for label, page_name in menu_items:
+        css_class = "sidebar-link active" if page == page_name else "sidebar-link"
+        st.markdown(f'<a class="{css_class}" href="{nav_url(page_name)}" target="_self">{label}</a>', unsafe_allow_html=True)
+    st.markdown("<div style='height:.4rem'></div>", unsafe_allow_html=True)
+    subtle_class = "sidebar-link subtle active" if page == "Toevoegen" else "sidebar-link subtle"
+    st.markdown(f'<a class="{subtle_class}" href="{nav_url("Toevoegen")}" target="_self">+ Activiteit toevoegen</a>', unsafe_allow_html=True)
+    if is_admin(player):
+        st.divider()
+        for label, page_name in [("Wijzigingsverzoeken", "Wijzigingsverzoeken"), ("Instellingen", "Instellingen")]:
+            css_class = "sidebar-link active" if page == page_name else "sidebar-link"
+            st.markdown(f'<a class="{css_class}" href="{nav_url(page_name)}" target="_self">{label}</a>', unsafe_allow_html=True)
+    st.divider()
+    if st.button("Uitloggen", use_container_width=True, key="logout"):
+        st.session_state.clear()
+        st.query_params.clear()
+        st.rerun()
+
+lb = db.leaderboard()
+my = next((entry for entry in lb if entry["id"] == player["id"]), None)
+players = db.get_players()
+player_names = [entry["name"] for entry in players]
+player_name_to_id = {entry["name"]: entry["id"] for entry in players}
+
+if page == "Home":
+    render_page_title(f"Hoi {player['name']}")
+    st.markdown('<div class="section">Komende taken voor jou</div>', unsafe_allow_html=True)
+    mine_tasks = db.tasks_for_player(player["id"])[:3]
     if mine_tasks:
-        for t in mine_tasks: task_card(t,personal=True)
-    else: st.caption('Je hebt op dit moment geen komende taken.')
-    st.markdown('<div class="section">Teamstand</div>',unsafe_allow_html=True)
-    for i,r in enumerate(lb[:5],1): player_card(r,i,'home_player')
-    st.info('Volgende voor een verplichting: '+recommendation())
-    c1,c2=st.columns([3,1])
-    c1.markdown('<div class="section">Recent</div>',unsafe_allow_html=True)
-    if c2.button('Bekijk alles',key='recent_all',use_container_width=True): goto('Activiteiten',view='team')
-    for a in db.get_activities(limit=4):
-        st.markdown(f'<div class="card">{a["icon"]} <b>{a["player_name"]}</b> · {a["activity_name"]}<span style="float:right"><b>+{a["points"]}</b></span><br><span class="muted">{a["activity_date"]} · {a["description"] or ""}</span></div>',unsafe_allow_html=True)
-
-elif page=='Toevoegen':
-    st.markdown('## ➕ Toevoegen')
-    tab1,tab2,tab3,tab4=st.tabs(['Activiteit','Taak','Idee','Map'])
-    with tab1: activity_form()
-    with tab2:
-        types=db.get_activity_types(); players=[p for p in db.get_players() if p['role']=='player']
-        title=st.text_input('Taaknaam',key='task_title'); d=st.date_input('Datum',date.today(),key='task_date'); tm=st.text_input('Tijd',placeholder='18:30',key='task_time')
-        type_labels=[f"{t['icon']} {t['name']}" for t in types]; label=st.selectbox('Activiteitstype',type_labels,key='task_type'); t=types[type_labels.index(label)]
-        people=st.multiselect('Toewijzen aan',[p['name'] for p in players],key='task_people'); desc=st.text_area('Beschrijving',key='task_desc')
-        st.caption(f"Punten volgen automatisch het activiteitstype. Basispunten: {t['base_points']}.")
-        if st.button('Taak toevoegen',type='primary',disabled=not title,key='task_save'):
-            db.add_task(title,d,tm,t['id'],t['category'],desc,[p['id'] for p in players if p['name'] in people]); st.success('Taak toegevoegd.'); st.rerun()
-    with tab3:
-        folders=db.get_folders(); labels=[f"{f['icon']} {f['name']}" for f in folders]; label=st.selectbox('Map',labels,key='idea_folder'); f=folders[labels.index(label)]
-        title=st.text_input('Idee',key='idea_title'); desc=st.text_area('Uitleg',key='idea_desc'); pts=st.number_input('Voorstel voor punten',min_value=0,value=0,key='idea_pts')
-        if st.button('Idee plaatsen',type='primary',disabled=not title,key='idea_save'): db.add_idea(f['id'],player['id'],title,desc,pts); st.success('Idee toegevoegd.'); st.rerun()
-    with tab4:
-        name=st.text_input('Naam brainstormmap',key='folder_name'); icon=st.text_input('Icoon',value='📁',key='folder_icon')
-        if st.button('Map maken',type='primary',disabled=not name,key='folder_save'): db.add_folder(name,icon,player['id']); st.success('Map gemaakt.'); st.rerun()
-
-elif page=='Activiteiten':
-    st.markdown('## 📝 Activiteiten')
-    default='Alle recente' if q('view')=='team' else 'Mijn activiteiten'
-    scope=st.segmented_control('Overzicht',['Mijn activiteiten','Alle recente'],default=default,key='activity_scope')
-    if scope=='Mijn activiteiten':
-        st.caption('Nieuwe activiteiten staan direct in je overzicht en tellen direct mee.')
-        activities=db.get_activities(player_id=player['id'])
-        if not activities: st.info('Je hebt nog geen activiteiten toegevoegd.')
-        for a in activities:
-            st.markdown(f'<div class="card">{a["icon"]} <b>{a["activity_name"]}</b><span style="float:right"><b>+{a["points"]} pt</b></span><br><span class="muted">{a["activity_date"]}</span><br>{a["description"] or ""}</div>',unsafe_allow_html=True)
-            with st.expander('Wijziging aanvragen'):
-                text=st.text_area('Wat wil je wijzigen?',key=f'chg_{a["id"]}',placeholder='Bijv. aanwezigheid moet Hele dag zijn in plaats van Halve dag')
-                if st.button('Verzoek versturen',key=f'chg_btn_{a["id"]}',disabled=not text): db.request_change(a['id'],player['id'],text); st.success('Verzoek verstuurd.')
+        for task in mine_tasks:
+            task_card(task, personal=True)
     else:
-        st.caption('Alle recente activiteiten van het team.')
-        for a in db.get_activities():
-            st.markdown(f'<div class="card">{a["icon"]} <b>{a["player_name"]}</b> · {a["activity_name"]}<span style="float:right"><b>+{a["points"]}</b></span><br><span class="muted">{a["activity_date"]}</span><br>{a["description"] or ""}</div>',unsafe_allow_html=True)
+        st.caption("Je hebt op dit moment geen komende taken.")
 
-elif page=='Agenda':
-    st.markdown('## 📅 Agenda')
-    who=st.segmented_control('Agenda',['Mijn agenda','Hele team'],default='Mijn agenda',key='agenda_scope')
-    mode=st.segmented_control('Weergave',['Lijst','Kalender'],default='Lijst',key='agenda_mode')
-    tasks=db.tasks_for_player(player['id']) if who=='Mijn agenda' else db.get_tasks()
-    if mode=='Lijst':
-        if not tasks: st.info('Geen komende taken.')
-        for t in tasks: task_card(t,personal=(who=='Mijn agenda'))
+    st.markdown('<div class="section">Teaminfo</div>', unsafe_allow_html=True)
+    money = db.money_summary(statuses=["approved"])
+    st.markdown(
+        f'<div class="soft"><b>Teamrekening</b><br><span class="muted">Huidig saldo</span><br><b>{format_euro(money["balance"])}</b></div>',
+        unsafe_allow_html=True,
+    )
+    st.info("Volgende voor een verplichting: " + recommendation(lb))
+
+    st.markdown('<div class="section">Teamstand</div>', unsafe_allow_html=True)
+    for index, row in enumerate(lb[:5], 1):
+        player_card(row, index, "home_player")
+
+    col1, col2 = st.columns([3, 1])
+    col1.markdown('<div class="section">Recente activiteiten</div>', unsafe_allow_html=True)
+    if col2.button("Bekijk alles", key="recent_all", use_container_width=True):
+        goto("Activiteiten", view="team")
+    for activity in db.get_activities(limit=4):
+        st.markdown(
+            f'<div class="card">{activity["icon"]} <b>{activity["player_name"]}</b> · {activity["activity_name"]}'
+            f'<span style="float:right"><b>+{activity["points"]}</b></span>'
+            f'<br><span class="muted">{activity["activity_date"]} · {activity["description"] or ""}</span></div>',
+            unsafe_allow_html=True,
+        )
+
+elif page == "Toevoegen":
+    render_page_title("+ Activiteit toevoegen")
+    tab_activity, tab_task, tab_idea, tab_folder = st.tabs(["Activiteit", "Taak", "Idee", "Map"])
+    with tab_activity:
+        activity_form()
+    with tab_task:
+        activity_types = db.get_activity_types()
+        team_players = [entry for entry in players if entry["role"] == "player"]
+        if not activity_types:
+            st.warning("Er zijn nog geen activiteitstypes ingesteld voor taken.")
+        else:
+            title = st.text_input("Taaknaam", key="task_title")
+            task_date = st.date_input("Datum", date.today(), key="task_date")
+            task_time = st.text_input("Tijd", placeholder="18:30", key="task_time")
+            labels = [f"{entry['icon']} {entry['name']}" for entry in activity_types]
+            selected_label = st.selectbox("Activiteitstype", labels, key="task_type")
+            activity_type = activity_types[labels.index(selected_label)]
+            selected_people = st.multiselect("Toewijzen aan", [entry["name"] for entry in team_players], key="task_people")
+            description = st.text_area("Beschrijving", key="task_desc")
+            st.caption(f"Punten volgen automatisch het activiteitstype. Basispunten: {activity_type['base_points']}.")
+            if st.button("Taak toevoegen", type="primary", disabled=not title, key="task_save"):
+                db.add_task(
+                    title,
+                    task_date,
+                    task_time,
+                    activity_type["id"],
+                    activity_type["category"],
+                    description,
+                    [entry["id"] for entry in team_players if entry["name"] in selected_people],
+                )
+                st.success("Taak toegevoegd.")
+                st.rerun()
+    with tab_idea:
+        folders = db.get_folders()
+        if not folders:
+            st.info("Maak eerst een brainstormmap aan via het tabblad Map.")
+        else:
+            labels = [f"{folder['icon']} {folder['name']}" for folder in folders]
+            selected = st.selectbox("Map", labels, key="idea_folder")
+            folder = folders[labels.index(selected)]
+            title = st.text_input("Idee", key="idea_title")
+            description = st.text_area("Uitleg", key="idea_desc")
+            points = st.number_input("Voorstel voor punten", min_value=0, value=0, key="idea_pts")
+            if st.button("Idee plaatsen", type="primary", disabled=not title, key="idea_save"):
+                db.add_idea(folder["id"], player["id"], title, description, points)
+                st.success("Idee toegevoegd.")
+                st.rerun()
+    with tab_folder:
+        name = st.text_input("Naam brainstormmap", key="folder_name")
+        icon = st.text_input("Icoon", value="📁", key="folder_icon")
+        if st.button("Map maken", type="primary", disabled=not name, key="folder_save"):
+            try:
+                db.add_folder(name, icon, player["id"])
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                st.success("Map gemaakt.")
+                st.rerun()
+
+elif page == "Activiteiten":
+    render_page_title("Activiteiten")
+    default_scope = "Alle recente" if q("view") == "team" else "Mijn activiteiten"
+    scope = st.segmented_control("Overzicht", ["Mijn activiteiten", "Alle recente"], default=default_scope, key="activity_scope")
+    if scope == "Mijn activiteiten":
+        st.caption("Nieuwe activiteiten staan direct in je overzicht en tellen direct mee.")
+        activities = db.get_activities(player_id=player["id"])
+        if not activities:
+            st.info("Je hebt nog geen activiteiten toegevoegd.")
+        for activity in activities:
+            st.markdown(
+                f'<div class="card">{activity["icon"]} <b>{activity["activity_name"]}</b>'
+                f'<span style="float:right"><b>+{activity["points"]} pt</b></span>'
+                f'<br><span class="muted">{activity["activity_date"]}</span><br>{activity["description"] or ""}</div>',
+                unsafe_allow_html=True,
+            )
+            with st.expander("Wijziging aanvragen"):
+                text = st.text_area(
+                    "Wat wil je wijzigen?",
+                    key=f"chg_{activity['id']}",
+                    placeholder="Bijv. aanwezigheid moet Hele dag zijn in plaats van Halve dag",
+                )
+                if st.button("Verzoek versturen", key=f"chg_btn_{activity['id']}", disabled=not text):
+                    db.request_change(activity["id"], player["id"], text)
+                    st.success("Verzoek verstuurd.")
     else:
-        st.session_state.setdefault('cal_month',date.today().month); st.session_state.setdefault('cal_year',date.today().year)
-        c1,c2,c3=st.columns([1,3,1])
-        if c1.button('‹',key='cal_prev',use_container_width=True):
-            m=st.session_state.cal_month-1; y=st.session_state.cal_year
-            if m==0: m=12; y-=1
-            st.session_state.cal_month=m; st.session_state.cal_year=y; st.rerun()
-        c2.markdown(f"<h4 style='text-align:center'>{calendar.month_name[st.session_state.cal_month]} {st.session_state.cal_year}</h4>",unsafe_allow_html=True)
-        if c3.button('›',key='cal_next',use_container_width=True):
-            m=st.session_state.cal_month+1; y=st.session_state.cal_year
-            if m==13: m=1; y+=1
-            st.session_state.cal_month=m; st.session_state.cal_year=y; st.rerun()
-        days=list(calendar.Calendar(firstweekday=0).itermonthdays(st.session_state.cal_year,st.session_state.cal_month))
-        html='<div class="calendar">'+''.join(f'<div class="calhead">{d}</div>' for d in ['Ma','Di','Wo','Do','Vr','Za','Zo'])
+        st.caption("Alle recente activiteiten van het team.")
+        for activity in db.get_activities():
+            st.markdown(
+                f'<div class="card">{activity["icon"]} <b>{activity["player_name"]}</b> · {activity["activity_name"]}'
+                f'<span style="float:right"><b>+{activity["points"]}</b></span>'
+                f'<br><span class="muted">{activity["activity_date"]}</span><br>{activity["description"] or ""}</div>',
+                unsafe_allow_html=True,
+            )
+
+elif page == "Agenda":
+    render_page_title("Agenda")
+    who = st.segmented_control("Agenda", ["Mijn agenda", "Hele team"], default="Mijn agenda", key="agenda_scope")
+    mode = st.segmented_control("Weergave", ["Lijst", "Kalender"], default="Lijst", key="agenda_mode")
+    tasks = db.tasks_for_player(player["id"]) if who == "Mijn agenda" else db.get_tasks()
+    if mode == "Lijst":
+        if not tasks:
+            st.info("Geen komende taken.")
+        for task in tasks:
+            task_card(task, personal=(who == "Mijn agenda"))
+    else:
+        st.session_state.setdefault("cal_month", date.today().month)
+        st.session_state.setdefault("cal_year", date.today().year)
+        col1, col2, col3 = st.columns([1, 3, 1])
+        if col1.button("‹", key="cal_prev", use_container_width=True):
+            month = st.session_state.cal_month - 1
+            year = st.session_state.cal_year
+            if month == 0:
+                month = 12
+                year -= 1
+            st.session_state.cal_month = month
+            st.session_state.cal_year = year
+            st.rerun()
+        col2.markdown(
+            f"<h4 style='text-align:center'>{calendar.month_name[st.session_state.cal_month]} {st.session_state.cal_year}</h4>",
+            unsafe_allow_html=True,
+        )
+        if col3.button("›", key="cal_next", use_container_width=True):
+            month = st.session_state.cal_month + 1
+            year = st.session_state.cal_year
+            if month == 13:
+                month = 1
+                year += 1
+            st.session_state.cal_month = month
+            st.session_state.cal_year = year
+            st.rerun()
+        days = list(calendar.Calendar(firstweekday=0).itermonthdays(st.session_state.cal_year, st.session_state.cal_month))
+        html = '<div class="calendar">' + "".join(f'<div class="calhead">{day}</div>' for day in ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"])
         for day in days:
-            if day==0: html+='<div class="day empty"></div>'; continue
-            ds=f'{st.session_state.cal_year:04d}-{st.session_state.cal_month:02d}-{day:02d}'; todays=[t for t in tasks if t['task_date']==ds]
-            dots=' '.join(CATEGORY.get(t['category'],('', '🔹'))[1] for t in todays[:4]); html+=f'<div class="day"><b>{day}</b><div class="dots">{dots}</div></div>'
-        html+='</div>'; st.markdown(html,unsafe_allow_html=True)
-        st.markdown('<div class="section">Taken deze maand</div>',unsafe_allow_html=True)
-        for t in tasks:
-            if t['task_date'].startswith(f'{st.session_state.cal_year:04d}-{st.session_state.cal_month:02d}'): task_card(t,personal=(who=='Mijn agenda'))
+            if day == 0:
+                html += '<div class="day empty"></div>'
+                continue
+            day_string = f"{st.session_state.cal_year:04d}-{st.session_state.cal_month:02d}-{day:02d}"
+            today_tasks = [task for task in tasks if task["task_date"] == day_string]
+            dots = " ".join(CATEGORY.get(task["category"], ("", "🔹"))[1] for task in today_tasks[:4])
+            html += f'<div class="day"><b>{day}</b><div class="dots">{dots}</div></div>'
+        html += "</div>"
+        st.markdown(html, unsafe_allow_html=True)
+        st.markdown('<div class="section">Taken deze maand</div>', unsafe_allow_html=True)
+        for task in tasks:
+            if task["task_date"].startswith(f"{st.session_state.cal_year:04d}-{st.session_state.cal_month:02d}"):
+                task_card(task, personal=(who == "Mijn agenda"))
 
-elif page=='Ideeën':
-    st.markdown('## 💡 Brainstorm')
-    folders=db.get_folders(); folder_id=q('folder')
+elif page == "Ideeën":
+    render_page_title("Ideeën")
+    folders = db.get_folders()
+    folder_id = q("folder")
     if not folder_id:
-        for f in folders:
-            if st.button(f"{f['icon']} {f['name']} · {f['idea_count']} ideeën",use_container_width=True,key=f'folder_{f["id"]}'):
-                goto('Ideeën',folder=f['id'])
-        st.caption('Iedereen kan via ➕ een nieuwe brainstormmap toevoegen.')
+        for folder in folders:
+            if st.button(
+                f"{folder['icon']} {folder['name']} · {folder['idea_count']} ideeën",
+                use_container_width=True,
+                key=f"folder_{folder['id']}",
+            ):
+                goto("Ideeën", folder=folder["id"])
+        if st.button("+ Nieuwe map", key="show_new_folder", use_container_width=True):
+            st.session_state["show_new_folder_form"] = not st.session_state.get("show_new_folder_form", False)
+        if st.session_state.get("show_new_folder_form"):
+            st.markdown('<div class="soft">', unsafe_allow_html=True)
+            new_name = st.text_input("Naam van de nieuwe map", key="new_folder_name_inline")
+            new_icon = st.text_input("Icoon", value="📁", key="new_folder_icon_inline")
+            col1, col2 = st.columns(2)
+            if col1.button("Map opslaan", key="new_folder_save_inline", disabled=not new_name, use_container_width=True):
+                try:
+                    db.add_folder(new_name, new_icon, player["id"])
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.session_state["show_new_folder_form"] = False
+                    st.success("Map gemaakt.")
+                    st.rerun()
+            if col2.button("Annuleren", key="new_folder_cancel_inline", use_container_width=True):
+                st.session_state["show_new_folder_form"] = False
+                st.rerun()
     else:
-        try: fid=int(folder_id)
-        except Exception: fid=None
-        f=next((x for x in folders if x['id']==fid),None)
-        if not f: goto('Ideeën')
-        if st.button('← Alle mappen',key='back_folders'): goto('Ideeën')
-        st.markdown(f"### {f['icon']} {f['name']}")
-        st.caption('Ideeën zijn ingeklapt. Tik op een titel om de details en reacties te zien.')
-        for idea in db.get_ideas(f['id']):
-            label=f"{idea['title']}   ·   👍 {idea['votes']}   ·   💬 {len(idea['comments'])}"
-            with st.expander(label,expanded=False):
-                st.markdown(f'<span class="badge">{idea["status"]}</span>',unsafe_allow_html=True)
+        try:
+            current_folder_id = int(folder_id)
+        except Exception:
+            current_folder_id = None
+        folder = next((entry for entry in folders if entry["id"] == current_folder_id), None)
+        if not folder:
+            goto("Ideeën")
+        if st.button("← Alle mappen", key="back_folders"):
+            goto("Ideeën")
+        st.markdown(f"### {folder['icon']} {folder['name']}")
+        st.caption("Ideeën zijn standaard ingeklapt. Open een idee voor details, stemmen en reacties.")
+        for idea in db.get_ideas(folder["id"], viewer_id=player["id"]):
+            label = f"{idea['title']}   ·   Score {idea['net_score']}   ·   👍 {idea['likes']}   ·   👎 {idea['dislikes']}   ·   💬 {len(idea['comments'])}"
+            with st.expander(label, expanded=False):
+                st.markdown(
+                    f'<div class="idea-meta"><span class="badge">{idea["status"]}</span><span class="score-badge">Score {idea["net_score"]}</span></div>',
+                    unsafe_allow_html=True,
+                )
                 st.caption(f"door {idea['author_name']}")
-                if idea['description']: st.write(idea['description'])
+                if idea["description"]:
+                    st.write(idea["description"])
+                col1, col2 = st.columns(2)
+                up_type = "primary" if idea["current_vote"] == 1 else "secondary"
+                down_type = "primary" if idea["current_vote"] == -1 else "secondary"
+                if col1.button(f"👍 {idea['likes']}", key=f"vote_up_{idea['id']}", type=up_type, use_container_width=True):
+                    db.cast_idea_vote(idea["id"], player["id"], 1)
+                    st.rerun()
+                if col2.button(f"👎 {idea['dislikes']}", key=f"vote_down_{idea['id']}", type=down_type, use_container_width=True):
+                    db.cast_idea_vote(idea["id"], player["id"], -1)
+                    st.rerun()
                 st.markdown(f"**Puntenvoorstel:** {idea['points_suggestion'] or 0}")
-                if st.button('👍 Stem / stem intrekken',key=f'vote_{idea["id"]}'): db.toggle_vote(idea['id'],player['id']); st.rerun()
-                st.markdown('**Reacties**')
-                if not idea['comments']: st.caption('Nog geen reacties.')
-                for c in idea['comments']: st.markdown(f"**{c['player_name']}**  \n{c['body']}")
-                body=st.text_input('Reageer',key=f'comment_{idea["id"]}')
-                if st.button('Plaatsen',key=f'comment_btn_{idea["id"]}',disabled=not body): db.add_comment(idea['id'],player['id'],body); st.rerun()
-                if player['role']=='admin':
-                    statuses=['Nieuw idee','In bespreking','Gekozen','Uitgevoerd','Geparkeerd','Niet uitvoeren']
-                    status=st.selectbox('Status',statuses,index=statuses.index(idea['status']) if idea['status'] in statuses else 0,key=f'status_{idea["id"]}')
-                    if st.button('Status opslaan',key=f'status_btn_{idea["id"]}'): db.set_idea_status(idea['id'],status); st.rerun()
+                st.markdown('<div class="subsection-title">Reacties</div>', unsafe_allow_html=True)
+                if not idea["comments"]:
+                    st.caption("Nog geen reacties.")
+                for comment in idea["comments"]:
+                    st.markdown(f"**{comment['player_name']}**  \n{comment['body']}")
+                body = st.text_input("Reageer", key=f"comment_{idea['id']}")
+                if st.button("Plaatsen", key=f"comment_btn_{idea['id']}", disabled=not body):
+                    db.add_comment(idea["id"], player["id"], body)
+                    st.rerun()
+                if is_admin(player):
+                    statuses = ["Nieuw idee", "In bespreking", "Gekozen", "Uitgevoerd", "Geparkeerd", "Niet uitvoeren"]
+                    current_index = statuses.index(idea["status"]) if idea["status"] in statuses else 0
+                    status = st.selectbox("Status", statuses, index=current_index, key=f"status_{idea['id']}")
+                    if st.button("Status opslaan", key=f"status_btn_{idea['id']}"):
+                        db.set_idea_status(idea["id"], status)
+                        st.rerun()
 
-elif page=='Ranglijst':
-    st.markdown('## ⭐ Ranglijst')
-    view=st.segmented_control('Weergave',['Balken','Spelercards'],default='Spelercards',key='rank_view')
-    if view=='Balken' and lb:
-        df=pd.DataFrame(lb); df['label']=[f'{i}. {n}' for i,n in enumerate(df.name,1)]
-        bars=alt.Chart(df).mark_bar(cornerRadiusEnd=8,height=25).encode(x=alt.X('points:Q',axis=None,title=None),y=alt.Y('label:N',sort=df.label.tolist(),title=None),color=alt.value('#6EA6F8'),tooltip=['name','points','activities'])
-        txt=bars.mark_text(align='left',dx=7,fontWeight='bold').encode(text='points:Q',color=alt.value('#254360'))
-        st.altair_chart((bars+txt).properties(height=max(180,len(df)*40)),use_container_width=True)
-        st.caption('Kies Spelercards om op een speler te kunnen tikken.')
+        if st.button("+ Idee toevoegen", key=f"show_add_idea_{folder['id']}", use_container_width=True):
+            state_key = f"show_add_idea_form_{folder['id']}"
+            st.session_state[state_key] = not st.session_state.get(state_key, False)
+        if st.session_state.get(f"show_add_idea_form_{folder['id']}"):
+            title = st.text_input("Titel van het idee", key=f"folder_idea_title_{folder['id']}")
+            description = st.text_area("Beschrijving", key=f"folder_idea_desc_{folder['id']}")
+            points = st.number_input("Voorstel voor punten", min_value=0, value=0, key=f"folder_idea_points_{folder['id']}")
+            col1, col2 = st.columns(2)
+            if col1.button("Idee opslaan", key=f"folder_idea_save_{folder['id']}", disabled=not title, use_container_width=True):
+                db.add_idea(folder["id"], player["id"], title, description, points)
+                st.session_state[f"show_add_idea_form_{folder['id']}"] = False
+                st.success("Idee toegevoegd.")
+                st.rerun()
+            if col2.button("Annuleren", key=f"folder_idea_cancel_{folder['id']}", use_container_width=True):
+                st.session_state[f"show_add_idea_form_{folder['id']}"] = False
+                st.rerun()
+
+elif page == "Ranglijst punten":
+    render_page_title("Ranglijst punten")
+    view = st.segmented_control("Weergave", ["Balken", "Spelercards"], default="Spelercards", key="rank_view")
+    if view == "Balken" and lb:
+        dataframe = pd.DataFrame(lb)
+        dataframe["label"] = [f"{idx}. {name}" for idx, name in enumerate(dataframe.name, 1)]
+        bars = (
+            alt.Chart(dataframe)
+            .mark_bar(cornerRadiusEnd=8, height=25)
+            .encode(
+                x=alt.X("points:Q", axis=None, title=None),
+                y=alt.Y("label:N", sort=dataframe.label.tolist(), title=None),
+                color=alt.value("#6EA6F8"),
+                tooltip=["name", "points", "activities"],
+            )
+        )
+        text = bars.mark_text(align="left", dx=7, fontWeight="bold").encode(text="points:Q", color=alt.value("#254360"))
+        st.altair_chart((bars + text).properties(height=max(180, len(dataframe) * 40)), use_container_width=True)
+        st.caption("Kies Spelercards om op een speler te kunnen tikken.")
     else:
-        st.caption('Tik op een speler voor een popup met de punten en activiteiten.')
-        for i,r in enumerate(lb,1): player_card(r,i,'rank_player')
-    st.info(recommendation())
+        st.caption("Tik op een speler voor een popup met de punten en activiteiten.")
+        for index, row in enumerate(lb, 1):
+            player_card(row, index, "rank_player")
+    st.info(recommendation(lb))
 
-elif page=='Profiel':
-    st.markdown(f"## 👤 {player['name']}")
-    pts=my['points'] if my else 0; rank=lb.index(my)+1 if my in lb else '—'; acts=my['activities'] if my else 0
-    metric_strip(pts,rank,acts)
-    st.markdown('<div class="section">Mijn bijdrage</div>',unsafe_allow_html=True)
-    for b in db.breakdown(player['id']):
-        if b['count']: st.markdown(f'<div class="card">{b["icon"]} <b>{b["name"]}</b><span style="float:right"><b>{b["points"]} pt</b></span><br><span class="muted">{b["count"]}×</span></div>',unsafe_allow_html=True)
-    st.markdown('<div class="section">Taakhistorie</div>',unsafe_allow_html=True)
-    for t in db.tasks_for_player(player['id'],include_past=True)[:8]: task_card(t)
+elif page == "Profiel":
+    render_page_title(player["name"])
+    points = my["points"] if my else 0
+    rank = lb.index(my) + 1 if my in lb else "—"
+    activities = my["activities"] if my else 0
+    metric_strip(points, rank, activities)
+    st.markdown('<div class="section">Mijn bijdrage</div>', unsafe_allow_html=True)
+    for row in db.breakdown(player["id"]):
+        if row["count"]:
+            st.markdown(
+                f'<div class="card">{row["icon"]} <b>{row["name"]}</b><span style="float:right"><b>{row["points"]} pt</b></span>'
+                f'<br><span class="muted">{row["count"]}×</span></div>',
+                unsafe_allow_html=True,
+            )
+    st.markdown('<div class="section">Taakhistorie</div>', unsafe_allow_html=True)
+    for task in db.tasks_for_player(player["id"], include_past=True)[:8]:
+        task_card(task)
 
-elif page=='Meldingen':
-    st.markdown('## 🔔 Meldingen')
-    ns=db.notifications(player['id'])
-    if not ns: st.info('Geen meldingen.')
-    for n in ns: st.markdown(f'<div class="card"><b>{n["text"]}</b><br><span class="muted">{n["created_at"]}</span></div>',unsafe_allow_html=True)
+elif page == "Meldingen":
+    render_page_title("Meldingen")
+    notices = db.notifications(player["id"])
+    if not notices:
+        st.info("Geen meldingen.")
+    for notice in notices:
+        st.markdown(
+            f'<div class="card"><b>{notice["text"]}</b><br><span class="muted">{notice["created_at"]}</span></div>',
+            unsafe_allow_html=True,
+        )
 
-elif page=='Teamrekening':
-    st.markdown('## 💰 Teamrekening')
-    summary=db.money_summary()
-    st.markdown(f'''<div class="metric-row">
-      <div class="mini-metric"><div class="label">Saldo</div><div class="value">€ {summary['balance']:.2f}</div></div>
-      <div class="mini-metric"><div class="label">Inkomsten</div><div class="value">€ {summary['income']:.2f}</div></div>
-      <div class="mini-metric"><div class="label">Uitgaven</div><div class="value">€ {summary['expense']:.2f}</div></div>
-    </div>'''.replace('.',','),unsafe_allow_html=True)
-    tab1,tab2,tab3=st.tabs(['Overzicht','Uitgave toevoegen','Inkomst toevoegen'])
-    with tab1:
-        tx=db.get_transactions()
-        if tx:
-            df=pd.DataFrame(tx); df['signed']=df.apply(lambda r: r['amount'] if r['transaction_type']=='income' else -r['amount'],axis=1)
-            chart=alt.Chart(df).mark_bar(cornerRadiusEnd=5).encode(x=alt.X('transaction_date:T',title=None),y=alt.Y('signed:Q',title='€'),tooltip=['description','amount','transaction_type'])
-            st.altair_chart(chart,use_container_width=True)
-        st.markdown('#### Transacties')
-        for t in tx:
-            sign='+' if t['transaction_type']=='income' else '−'; cls='money-positive' if t['transaction_type']=='income' else 'money-negative'
-            receipt={'uploaded':'Bon toegevoegd','lost':'Bonnetje kwijt','none':'Geen bonnetje'}.get(t['receipt_status'],'')
-            st.markdown(f'<div class="card"><b>{t["description"]}</b><span class="{cls}" style="float:right">{sign} € {t["amount"]:.2f}</span><br><span class="muted">{t["transaction_date"]} · {t["category"] or "Overig"} · {t["player_name"] or "Team"}</span><br><span class="muted">{receipt}</span></div>'.replace('.',','),unsafe_allow_html=True)
-    with tab2:
-        d=st.date_input('Datum',date.today(),key='money_expense_date'); amount=st.number_input('Bedrag (€)',min_value=0.0,step=1.0,key='money_expense_amount')
-        category=st.text_input('Categorie',placeholder='Bijv. boodschappen, materiaal, teamactiviteit',key='money_expense_category'); desc=st.text_input('Waarvoor was de uitgave?',key='money_expense_desc')
-        receipt_choice=st.radio('Bonnetje',['Ik heb een bonnetje','Geen bonnetje','Bonnetje kwijt'],horizontal=True,key='money_expense_receipt')
-        upload=None
-        if receipt_choice=='Ik heb een bonnetje': upload=st.file_uploader('Upload bonnetje',type=['png','jpg','jpeg','pdf'],key='money_expense_upload')
-        if st.button('Uitgave opslaan',type='primary',use_container_width=True,key='money_expense_save',disabled=amount<=0 or not desc):
-            status={'Ik heb een bonnetje':'uploaded','Geen bonnetje':'none','Bonnetje kwijt':'lost'}[receipt_choice]
-            db.add_transaction('expense',d,amount,category,desc,player['id'],status,upload.name if upload else None,upload.getvalue() if upload else None); st.success('Uitgave opgeslagen.'); st.rerun()
-    with tab3:
-        d=st.date_input('Datum',date.today(),key='money_income_date'); amount=st.number_input('Bedrag (€)',min_value=0.0,step=1.0,key='money_income_amount')
-        category=st.text_input('Categorie',placeholder='Bijv. sponsor, verkoop, actie',key='money_income_category'); desc=st.text_input('Waar komt het bedrag vandaan?',key='money_income_desc')
-        if st.button('Inkomst opslaan',type='primary',use_container_width=True,key='money_income_save',disabled=amount<=0 or not desc): db.add_transaction('income',d,amount,category,desc,player['id']); st.success('Inkomst opgeslagen.'); st.rerun()
+elif page == "Teamrekening":
+    render_page_title("Teamrekening")
+    approved_summary = db.money_summary(statuses=["approved"])
+    monthly_rows = db.get_monthly_financials(statuses=["approved"])
+    balance_history = db.get_balance_history(statuses=["approved"])
+    tab_names = ["Overzicht", "Uitgave toevoegen", "Inkomst toevoegen"]
+    if can_review_expenses(player):
+        tab_names.append("Te controleren uitgaven")
+    tabs = st.tabs(tab_names)
 
-elif page=='Wijzigingsverzoeken' and player['role']=='admin':
-    st.markdown('## ✅ Wijzigingsverzoeken')
-    reqs=db.get_change_requests()
-    if not reqs: st.info('Geen openstaande verzoeken.')
-    for r in reqs:
-        st.markdown(f'<div class="card"><b>{r["player_name"]}</b> · {r["activity_name"]}<br><span class="muted">{r["activity_date"]}</span><p>{r["request_text"]}</p></div>',unsafe_allow_html=True)
-        c1,c2=st.columns(2)
-        if c1.button('Goedkeuren',key=f'approve_{r["id"]}',use_container_width=True): db.resolve_change_request(r['id'],'approved'); st.rerun()
-        if c2.button('Afwijzen',key=f'reject_{r["id"]}',use_container_width=True): db.resolve_change_request(r['id'],'rejected'); st.rerun()
+    with tabs[0]:
+        view = st.segmented_control("Overzicht", ["Maandelijks", "Totaal"], default="Maandelijks", key="money_view_mode")
+        if view == "Maandelijks":
+            if monthly_rows:
+                options = list(reversed([row["month_key"] for row in monthly_rows]))
+                selected_month = st.selectbox("Maand", options, key="money_month_select")
+                current = next(row for row in monthly_rows if row["month_key"] == selected_month)
+                finance_metric_strip(format_euro(current["balance"]), format_euro(current["income"]), format_euro(current["expense"]))
+                monthly_frame = pd.DataFrame(monthly_rows)
+                monthly_frame["month"] = pd.to_datetime(monthly_frame["month_key"] + "-01")
+                chart_frame = monthly_frame.rename(
+                    columns={"income": "Inkomsten", "expense": "Uitgaven", "balance": "Saldo"}
+                )[["month", "Inkomsten", "Uitgaven", "Saldo"]]
+                chart_frame = chart_frame.melt("month", var_name="Serie", value_name="Bedrag")
+                st.altair_chart(
+                    money_line_chart(
+                        chart_frame,
+                        "month:T",
+                        "Serie:N",
+                        "Bedrag:Q",
+                        [alt.Tooltip("month:T", title="Maand"), "Serie:N", alt.Tooltip("Bedrag:Q", format=".2f")],
+                    ),
+                    use_container_width=True,
+                )
+            else:
+                st.info("Er zijn nog geen goedgekeurde transacties om een maandoverzicht te tonen.")
+        else:
+            finance_metric_strip(format_euro(approved_summary["balance"]), format_euro(approved_summary["income"]), format_euro(approved_summary["expense"]))
+            if balance_history:
+                history_frame = pd.DataFrame(balance_history)
+                history_frame["transaction_date"] = pd.to_datetime(history_frame["transaction_date"])
+                st.altair_chart(
+                    single_line_chart(
+                        history_frame,
+                        "transaction_date:T",
+                        "balance:Q",
+                        color="#2F6FED",
+                        tooltip_fields=[
+                            alt.Tooltip("transaction_date:T", title="Datum"),
+                            "description:N",
+                            alt.Tooltip("signed_amount:Q", title="Mutatie", format=".2f"),
+                            alt.Tooltip("balance:Q", title="Saldo", format=".2f"),
+                        ],
+                    ),
+                    use_container_width=True,
+                )
+            else:
+                st.info("Er zijn nog geen goedgekeurde transacties om een totaaloverzicht te tonen.")
 
-elif page=='Instellingen' and player['role']=='admin':
-    st.markdown('## ⚙️ Activiteiten instellen')
-    st.caption('Een activiteit kan alleen basispunten hebben, of één of meerdere zelfgemaakte keuzevelden met extra punten.')
-    for t in db.get_activity_types():
-        with st.expander(f"{t['icon']} {t['name']} · {t['base_points']} basispunten"):
-            pts=st.number_input('Basispunten',min_value=0,value=int(t['base_points']),key=f'base_{t["id"]}')
-            if st.button('Basispunten opslaan',key=f'base_save_{t["id"]}'): db.update_activity_base_points(t['id'],pts); st.rerun()
-            fields=db.get_fields(t['id'])
-            for f in fields:
-                st.markdown(f"**{f['label']}**")
-                st.caption(' · '.join(f"{o['label']} (+{o['points']})" for o in f['options']))
-            st.markdown('**+ Eigen keuzeveld toevoegen**')
-            label=st.text_input('Onderwerp / veldnaam',placeholder='Bijv. Aanwezigheid',key=f'new_field_{t["id"]}')
-            count=st.number_input('Aantal opties',min_value=1,max_value=6,value=2,key=f'opt_count_{t["id"]}')
-            options=[]
-            for i in range(int(count)):
-                c1,c2=st.columns([2,1]); name=c1.text_input(f'Optie {i+1}',key=f'opt_name_{t["id"]}_{i}'); op=c2.number_input('Punten',min_value=0,value=0,key=f'opt_pts_{t["id"]}_{i}'); options.append((name,op))
-            if st.button('Veld toevoegen',key=f'field_add_{t["id"]}',disabled=not label or any(not n for n,_ in options)): db.add_select_field(t['id'],label,options); st.success('Veld toegevoegd.'); st.rerun()
-    st.divider(); st.markdown('### Nieuw activiteitstype')
-    name=st.text_input('Naam',key='new_type_name'); icon=st.text_input('Icoon',value='⭐',key='new_type_icon'); category=st.selectbox('Categorie',['training','fluiten','team','geld','club'],key='new_type_category'); base=st.number_input('Basispunten',min_value=0,value=0,key='new_type_base')
-    if st.button('Activiteitstype toevoegen',type='primary',disabled=not name,key='new_type_save'): db.add_activity_type(name,icon,category,base); st.success('Toegevoegd.'); st.rerun()
+        st.markdown('<div class="section">Recente goedgekeurde transacties</div>', unsafe_allow_html=True)
+        approved_transactions = db.get_transactions(limit=8, statuses=["approved"])
+        if not approved_transactions:
+            st.caption("Nog geen goedgekeurde transacties.")
+        for transaction in approved_transactions:
+            render_transaction_card(transaction, show_receipt=False)
+
+        st.markdown('<div class="section">Mijn ingediende uitgaven</div>', unsafe_allow_html=True)
+        own_expenses = db.get_transactions(transaction_type="expense", submitted_by=player["id"], statuses=["pending", "approved", "rejected"])
+        if not own_expenses:
+            st.caption("Je hebt nog geen uitgaven ingediend.")
+        for transaction in own_expenses:
+            render_transaction_card(transaction, show_receipt=False)
+
+    with tabs[1]:
+        expense_date = st.date_input("Datum", date.today(), key="money_expense_date")
+        amount = st.number_input("Bedrag (€)", min_value=0.0, step=1.0, key="money_expense_amount")
+        description = st.text_input("Omschrijving", key="money_expense_desc")
+        category = st.text_input("Categorie", placeholder="Bijv. boodschappen, materiaal, teamactiviteit", key="money_expense_category")
+        default_index = player_names.index(player["name"]) if player["name"] in player_names else 0
+        paid_by_name = st.selectbox("Betaald door", player_names, index=default_index, key="money_expense_paid_by")
+        receipt_choice = st.radio("Bonnetje", ["Ik heb een bonnetje", "Bonnetje kwijt"], horizontal=True, key="money_expense_receipt")
+        upload = None
+        if receipt_choice == "Ik heb een bonnetje":
+            upload = st.file_uploader("Upload bonnetje", type=["png", "jpg", "jpeg", "pdf"], key="money_expense_upload")
+        if st.button("Uitgave indienen", type="primary", use_container_width=True, key="money_expense_save"):
+            if amount <= 0 or not description or not category:
+                st.error("Vul datum, bedrag, omschrijving en categorie in.")
+            elif receipt_choice == "Ik heb een bonnetje" and upload is None:
+                st.error("Upload een bonnetje of kies 'Bonnetje kwijt'.")
+            else:
+                receipt_status = "uploaded" if receipt_choice == "Ik heb een bonnetje" else "lost"
+                db.add_transaction(
+                    "expense",
+                    expense_date,
+                    amount,
+                    category,
+                    description,
+                    player_name_to_id[paid_by_name],
+                    submitted_by_player_id=player["id"],
+                    receipt_status=receipt_status,
+                    receipt_name=upload.name if upload else None,
+                    receipt_data=upload.getvalue() if upload else None,
+                    review_status="pending",
+                )
+                st.success("Uitgave ingediend. Kieft of Beheerder kan deze nu controleren.")
+                st.rerun()
+
+    with tabs[2]:
+        income_date = st.date_input("Datum", date.today(), key="money_income_date")
+        amount = st.number_input("Bedrag (€)", min_value=0.0, step=1.0, key="money_income_amount")
+        category = st.text_input("Categorie", placeholder="Bijv. sponsor, verkoop, actie", key="money_income_category")
+        description = st.text_input("Waar komt het bedrag vandaan?", key="money_income_desc")
+        paid_by_name = st.selectbox("Ontvangen door", player_names, index=0, key="money_income_paid_by")
+        if st.button("Inkomst opslaan", type="primary", use_container_width=True, key="money_income_save"):
+            if amount <= 0 or not description:
+                st.error("Vul minimaal bedrag en omschrijving in.")
+            else:
+                db.add_transaction(
+                    "income",
+                    income_date,
+                    amount,
+                    category,
+                    description,
+                    player_name_to_id[paid_by_name],
+                    submitted_by_player_id=player["id"],
+                    review_status="approved",
+                )
+                st.success("Inkomst opgeslagen.")
+                st.rerun()
+
+    if can_review_expenses(player):
+        with tabs[3]:
+            filter_choice = st.segmented_control("Controlelijst", ["Te controleren", "Alles"], default="Te controleren", key="review_filter")
+            statuses = ["pending"] if filter_choice == "Te controleren" else ["pending", "approved", "rejected"]
+            review_items = db.get_transactions(transaction_type="expense", statuses=statuses, include_receipt_data=True)
+            if not review_items:
+                st.info("Geen uitgaven in deze lijst.")
+            for transaction in review_items:
+                st.markdown(
+                    (
+                        f'<div class="card"><b>{transaction["submitted_by_name"] or transaction["paid_by_name"]}</b>'
+                        f' · {transaction["description"]}'
+                        f'<span style="float:right"><b>{format_euro(transaction["amount"])}</b></span>'
+                        f'<br><span class="muted">{transaction["transaction_date"]} · {transaction["category"] or "Overig"} · betaald door {transaction["paid_by_name"] or "Onbekend"}</span>'
+                        f'<br><span class="muted">{receipt_label(transaction.get("receipt_status"))}</span>'
+                        f'<br>{badge_status(transaction["review_status"])}</div>'
+                    ),
+                    unsafe_allow_html=True,
+                )
+                col1, col2 = st.columns(2)
+                if col1.button("Accepteren", key=f"approve_tx_{transaction['id']}", use_container_width=True):
+                    db.set_transaction_review(transaction["id"], "approved", player["id"])
+                    st.rerun()
+                if col2.button("Afwijzen", key=f"reject_tx_{transaction['id']}", use_container_width=True):
+                    db.set_transaction_review(transaction["id"], "rejected", player["id"])
+                    st.rerun()
+                with st.expander(f"Bewerken · {transaction['description']}", expanded=False):
+                    review_date = st.date_input("Datum", value=pd.to_datetime(transaction["transaction_date"]).date(), key=f"review_date_{transaction['id']}")
+                    review_amount = st.number_input("Bedrag (€)", min_value=0.0, value=float(transaction["amount"]), key=f"review_amount_{transaction['id']}")
+                    review_description = st.text_input("Omschrijving", value=transaction["description"], key=f"review_desc_{transaction['id']}")
+                    review_category = st.text_input("Categorie", value=transaction["category"] or "", key=f"review_cat_{transaction['id']}")
+                    current_paid_by = transaction["paid_by_name"] if transaction["paid_by_name"] in player_names else player_names[0]
+                    review_paid_by = st.selectbox("Betaald door", player_names, index=player_names.index(current_paid_by), key=f"review_paid_{transaction['id']}")
+                    receipt_default = "Ik heb een bonnetje" if transaction.get("receipt_status") == "uploaded" else "Bonnetje kwijt"
+                    review_receipt_choice = st.radio(
+                        "Bonnetje",
+                        ["Ik heb een bonnetje", "Bonnetje kwijt"],
+                        horizontal=True,
+                        index=0 if receipt_default == "Ik heb een bonnetje" else 1,
+                        key=f"review_receipt_{transaction['id']}",
+                    )
+                    if transaction.get("receipt_data"):
+                        st.download_button(
+                            "Bonnetje bekijken",
+                            data=transaction["receipt_data"],
+                            file_name=transaction.get("receipt_name") or f"bonnetje-{transaction['id']}",
+                            mime=guess_mime(transaction.get("receipt_name")),
+                            key=f"review_receipt_download_{transaction['id']}",
+                            use_container_width=True,
+                        )
+                    replacement_upload = None
+                    if review_receipt_choice == "Ik heb een bonnetje":
+                        replacement_upload = st.file_uploader(
+                            "Nieuw bonnetje uploaden (optioneel)",
+                            type=["png", "jpg", "jpeg", "pdf"],
+                            key=f"review_upload_{transaction['id']}",
+                        )
+                    review_status = st.selectbox(
+                        "Status",
+                        ["pending", "approved", "rejected"],
+                        index=["pending", "approved", "rejected"].index(transaction["review_status"]),
+                        format_func=format_status,
+                        key=f"review_status_{transaction['id']}",
+                    )
+                    if st.button("Wijzigingen opslaan", key=f"review_save_{transaction['id']}", type="primary", use_container_width=True):
+                        try:
+                            db.update_transaction(
+                                transaction["id"],
+                                review_date,
+                                review_amount,
+                                review_category,
+                                review_description,
+                                player_name_to_id[review_paid_by],
+                                receipt_status="uploaded" if review_receipt_choice == "Ik heb een bonnetje" else "lost",
+                                receipt_name=replacement_upload.name if replacement_upload else None,
+                                receipt_data=replacement_upload.getvalue() if replacement_upload else None,
+                                review_status=review_status,
+                                reviewer_id=player["id"],
+                            )
+                        except ValueError as exc:
+                            st.error(str(exc))
+                        else:
+                            st.success("Uitgave bijgewerkt.")
+                            st.rerun()
+
+elif page == "Wijzigingsverzoeken" and is_admin(player):
+    render_page_title("Wijzigingsverzoeken")
+    requests = db.get_change_requests()
+    if not requests:
+        st.info("Geen openstaande verzoeken.")
+    for request in requests:
+        st.markdown(
+            f'<div class="card"><b>{request["player_name"]}</b> · {request["activity_name"]}'
+            f'<br><span class="muted">{request["activity_date"]}</span><p>{request["request_text"]}</p></div>',
+            unsafe_allow_html=True,
+        )
+        col1, col2 = st.columns(2)
+        if col1.button("Goedkeuren", key=f"approve_{request['id']}", use_container_width=True):
+            db.resolve_change_request(request["id"], "approved")
+            st.rerun()
+        if col2.button("Afwijzen", key=f"reject_{request['id']}", use_container_width=True):
+            db.resolve_change_request(request["id"], "rejected")
+            st.rerun()
+
+elif page == "Instellingen" and is_admin(player):
+    render_page_title("Activiteiten instellen")
+    st.caption("Een activiteit kan alleen basispunten hebben, of één of meerdere zelfgemaakte keuzevelden met extra punten.")
+    for activity_type in db.get_activity_types():
+        with st.expander(f"{activity_type['icon']} {activity_type['name']} · {activity_type['base_points']} basispunten"):
+            points = st.number_input("Basispunten", min_value=0, value=int(activity_type["base_points"]), key=f"base_{activity_type['id']}")
+            if st.button("Basispunten opslaan", key=f"base_save_{activity_type['id']}"):
+                db.update_activity_base_points(activity_type["id"], points)
+                st.rerun()
+            fields = db.get_fields(activity_type["id"])
+            for field in fields:
+                st.markdown(f"**{field['label']}**")
+                st.caption(" · ".join(f"{option['label']} (+{option['points']})" for option in field["options"]))
+            st.markdown("**+ Eigen keuzeveld toevoegen**")
+            label = st.text_input("Onderwerp / veldnaam", placeholder="Bijv. Aanwezigheid", key=f"new_field_{activity_type['id']}")
+            count = st.number_input("Aantal opties", min_value=1, max_value=6, value=2, key=f"opt_count_{activity_type['id']}")
+            options = []
+            for index in range(int(count)):
+                col1, col2 = st.columns([2, 1])
+                name = col1.text_input(f"Optie {index + 1}", key=f"opt_name_{activity_type['id']}_{index}")
+                option_points = col2.number_input("Punten", min_value=0, value=0, key=f"opt_pts_{activity_type['id']}_{index}")
+                options.append((name, option_points))
+            if st.button(
+                "Veld toevoegen",
+                key=f"field_add_{activity_type['id']}",
+                disabled=not label or any(not name for name, _ in options),
+            ):
+                db.add_select_field(activity_type["id"], label, options)
+                st.success("Veld toegevoegd.")
+                st.rerun()
+    st.divider()
+    st.markdown("### Nieuw activiteitstype")
+    name = st.text_input("Naam", key="new_type_name")
+    icon = st.text_input("Icoon", value="⭐", key="new_type_icon")
+    category = st.selectbox("Categorie", ["training", "fluiten", "team", "geld", "club"], key="new_type_category")
+    base = st.number_input("Basispunten", min_value=0, value=0, key="new_type_base")
+    if st.button("Activiteitstype toevoegen", type="primary", disabled=not name, key="new_type_save"):
+        try:
+            db.add_activity_type(name, icon, category, base)
+        except ValueError as exc:
+            st.error(str(exc))
+        else:
+            st.success("Toegevoegd.")
+            st.rerun()

@@ -1,0 +1,4 @@
+.venv/
+.pycache/
+__pycache__/
+teamapp_v2_5.db
