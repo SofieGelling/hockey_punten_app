@@ -533,7 +533,7 @@ elif page == "Toevoegen":
             folder = folders[labels.index(selected)]
             title = st.text_input("Idee", key="idea_title")
             description = st.text_area("Uitleg", key="idea_desc")
-            points = st.number_input("Voorstel voor punten", min_value=0, value=0, key="idea_pts")
+            points = st.number_input("Voorstel voor punten", min_value=0.0, value=0.0, step=0.1, format="%.1f", key="idea_pts")
             if st.button("Idee plaatsen", type="primary", disabled=not title, key="idea_save"):
                 db.add_idea(folder["id"], player["id"], title, description, points)
                 st.success("Idee toegevoegd.")
@@ -724,7 +724,7 @@ elif page == "Ideeën":
         if st.session_state.get(f"show_add_idea_form_{folder['id']}"):
             title = st.text_input("Titel van het idee", key=f"folder_idea_title_{folder['id']}")
             description = st.text_area("Beschrijving", key=f"folder_idea_desc_{folder['id']}")
-            points = st.number_input("Voorstel voor punten", min_value=0, value=0, key=f"folder_idea_points_{folder['id']}")
+            points = st.number_input( "Voorstel voor punten", min_value=0.0, value=0.0, step=0.1, format="%.1f", key=f"folder_idea_points_{folder['id']}")
             col1, col2 = st.columns(2)
             if col1.button("Idee opslaan", key=f"folder_idea_save_{folder['id']}", disabled=not title, use_container_width=True):
                 db.add_idea(folder["id"], player["id"], title, description, points)
@@ -737,7 +737,7 @@ elif page == "Ideeën":
 
 elif page == "Ranglijst punten":
     render_page_title("Ranglijst punten")
-    view = st.segmented_control("Weergave", ["Balken", "Spelercards"], default="Spelercards", key="rank_view")
+    view = st.segmented_control("Weergave", ["Balken", "Spelercards"], default="Balken", key="rank_view")
     if view == "Balken" and lb:
         dataframe = pd.DataFrame(lb)
         dataframe["label"] = [f"{idx}. {name}" for idx, name in enumerate(dataframe.name, 1)]
@@ -1028,7 +1028,7 @@ elif page == "Instellingen" and is_admin(player):
     st.caption("Een activiteit kan alleen basispunten hebben, of één of meerdere zelfgemaakte keuzevelden met extra punten.")
     for activity_type in db.get_activity_types():
         with st.expander(f"{activity_type['icon']} {activity_type['name']} · {activity_type['base_points']} basispunten"):
-            points = st.number_input("Basispunten", min_value=0, value=int(activity_type["base_points"]), key=f"base_{activity_type['id']}")
+            points = st.number_input("Basispunten", min_value=0.0, value=float(activity_type["base_points"]),step=0.1,format="%.1f",key=f"base_{activity_type['id']}")
             if st.button("Basispunten opslaan", key=f"base_save_{activity_type['id']}"):
                 db.update_activity_base_points(activity_type["id"], points)
                 st.rerun()
@@ -1043,7 +1043,7 @@ elif page == "Instellingen" and is_admin(player):
             for index in range(int(count)):
                 col1, col2 = st.columns([2, 1])
                 name = col1.text_input(f"Optie {index + 1}", key=f"opt_name_{activity_type['id']}_{index}")
-                option_points = col2.number_input("Punten", min_value=0, value=0, key=f"opt_pts_{activity_type['id']}_{index}")
+                option_points = col2.number_input( "Punten", min_value=0.0, value=0.0, step=0.1, format="%.1f", key=f"opt_pts_{activity_type['id']}_{index}")
                 options.append((name, option_points))
             if st.button(
                 "Veld toevoegen",
@@ -1058,7 +1058,7 @@ elif page == "Instellingen" and is_admin(player):
     name = st.text_input("Naam", key="new_type_name")
     icon = st.text_input("Icoon", value="⭐", key="new_type_icon")
     category = st.selectbox("Categorie", ["training", "fluiten", "team", "geld", "club"], key="new_type_category")
-    base = st.number_input("Basispunten", min_value=0, value=0, key="new_type_base")
+    base = st.number_input("Basispunten", min_value=0.0, value=0.0, step=0.1, format="%.1f",key="new_type_base")
     if st.button("Activiteitstype toevoegen", type="primary", disabled=not name, key="new_type_save"):
         try:
             db.add_activity_type(name, icon, category, base)
