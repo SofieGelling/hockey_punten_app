@@ -280,8 +280,10 @@ def get_player(pid):
         return dict(row) if row else None
 
 
-def get_activity_types():
+def get_activity_types(include_inactive=False):
     with connection() as con:
+        if include_inactive:
+            return rows(con.execute("SELECT * FROM activity_types ORDER BY active DESC,id"))
         return rows(con.execute("SELECT * FROM activity_types WHERE active=1 ORDER BY id"))
 
 
@@ -299,6 +301,32 @@ def add_activity(player_id, type_id, activity_date, description, field_values, p
             "INSERT INTO activities(player_id,activity_type_id,activity_date,description,field_values_json,points) VALUES(?,?,?,?,?,?)",
             (player_id, type_id, str(activity_date), clean_text(description), json.dumps(field_values, ensure_ascii=False), float(points)),
         )
+
+
+def update_activity(activity_id, player_id, type_id, activity_date, description, field_values, points):
+    with connection() as con:
+        con.execute(
+            """
+            UPDATE activities
+            SET player_id=?, activity_type_id=?, activity_date=?, description=?, field_values_json=?, points=?
+            WHERE id=?
+            """,
+            (
+                player_id,
+                type_id,
+                str(activity_date),
+                clean_text(description),
+                json.dumps(field_values, ensure_ascii=False),
+                float(points),
+                activity_id,
+            ),
+        )
+
+
+def delete_activity(activity_id):
+    with connection() as con:
+        con.execute("DELETE FROM activity_change_requests WHERE activity_id=?", (activity_id,))
+        con.execute("DELETE FROM activities WHERE id=?", (activity_id,))
 
 
 def get_activities(player_id=None, limit=None):
@@ -794,6 +822,11 @@ def set_transaction_review(transaction_id, review_status, reviewer_id):
             "UPDATE team_transactions SET review_status=?, reviewed_by=?, reviewed_at=? WHERE id=?",
             (review_status, reviewed_by, reviewed_at, transaction_id),
         )
+
+
+def delete_transaction(transaction_id):
+    with connection() as con:
+        con.execute("DELETE FROM team_transactions WHERE id=?", (transaction_id,))
 
 
 def get_transactions(limit=None, transaction_type=None, submitted_by=None, paid_by=None, statuses=None, include_receipt_data=False):

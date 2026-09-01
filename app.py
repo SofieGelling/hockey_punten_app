@@ -158,6 +158,11 @@ def render_page_title(text):
     st.markdown(f'<div class="page-title">{text}</div>', unsafe_allow_html=True)
 
 
+def finish_action(message, page_name=None, **extra):
+    st.session_state["flash_message"] = message
+    goto(page_name or st.session_state.page, **extra)
+
+
 def metric_strip(points, rank, activities):
     st.markdown(
         f"""
@@ -325,8 +330,7 @@ def activity_form():
     st.info(f"Deze activiteit levert **{total} punten** op en staat direct in je overzicht.")
     if st.button("Activiteit opslaan", type="primary", use_container_width=True, key="activity_save"):
         db.add_activity(player["id"], activity_type["id"], activity_date, description, values, total)
-        st.success("Opgeslagen!")
-        st.rerun()
+        finish_action("Activiteit opgeslagen.", "Toevoegen")
 
 
 def task_card(task, personal=False):
@@ -349,27 +353,27 @@ def task_card(task, personal=False):
         col1, col2 = st.columns(2)
         if col1.button("✓ Ik kan", key=f"can_{task['id']}", use_container_width=True):
             db.set_task_response(task["id"], player["id"], "can")
-            st.rerun()
+            finish_action("Antwoord opgeslagen.")
         if col2.button("✕ Ik kan niet", key=f"cant_{task['id']}", use_container_width=True):
             st.session_state[f"cant_reason_{task['id']}"] = True
         if st.session_state.get(f"cant_reason_{task['id']}"):
             reason = st.text_input("Reden", key=f"cant_reason_text_{task['id']}")
             if st.button("Opslaan", key=f"cant_reason_save_{task['id']}", disabled=not reason):
                 db.set_task_response(task["id"], player["id"], "cannot", reason)
-                st.rerun()
+                finish_action("Antwoord opgeslagen.")
     elif response == "cannot":
         st.warning(f"Kan niet — {mine['reason']}")
         col1, col2 = st.columns(2)
         if col1.button("✓ Toch wel kunnen", key=f"switch_can_{task['id']}", use_container_width=True):
             db.set_task_response(task["id"], player["id"], "can", "")
-            st.rerun()
+            finish_action("Antwoord opgeslagen.")
         if col2.button("✏️ Reden wijzigen", key=f"edit_reason_{task['id']}", use_container_width=True):
             st.session_state[f"edit_cant_{task['id']}"] = True
         if st.session_state.get(f"edit_cant_{task['id']}"):
             reason = st.text_input("Reden aanpassen", value=mine["reason"] or "", key=f"edit_cant_text_{task['id']}")
             if st.button("Wijziging opslaan", key=f"edit_cant_save_{task['id']}", disabled=not reason):
                 db.set_task_response(task["id"], player["id"], "cannot", reason)
-                st.rerun()
+                finish_action("Wijziging opgeslagen.")
     else:
         st.success("Je hebt aangegeven dat je kunt.")
         col1, col2 = st.columns(2)
@@ -377,13 +381,13 @@ def task_card(task, personal=False):
             st.session_state[f"change_can_{task['id']}"] = True
         if not mine["completed"] and col2.button("✓ Mijn deel klaar", key=f"done_{task['id']}", use_container_width=True):
             db.set_assignment_completed(task["id"], player["id"])
-            st.rerun()
+            finish_action("Taak afgerond opgeslagen.")
         if st.session_state.get(f"change_can_{task['id']}"):
             reason = st.text_input("Waarom kun je toch niet?", key=f"change_can_reason_{task['id']}")
             col3, col4 = st.columns(2)
             if col3.button("Opslaan als kan niet", key=f"change_can_save_{task['id']}", disabled=not reason, use_container_width=True):
                 db.set_task_response(task["id"], player["id"], "cannot", reason)
-                st.rerun()
+                finish_action("Antwoord opgeslagen.")
             if col4.button("Annuleren", key=f"change_can_cancel_{task['id']}", use_container_width=True):
                 st.session_state.pop(f"change_can_{task['id']}", None)
                 st.rerun()
@@ -429,6 +433,10 @@ page = PAGE_ALIASES.get(q("page", "Home"), q("page", "Home"))
 if page not in VALID_PAGES:
     page = "Home"
 st.session_state.page = page
+
+flash_message = st.session_state.pop("flash_message", None)
+if flash_message:
+    st.success(flash_message)
 
 with st.sidebar:
     st.markdown(f'<div class="sidebar-name">{player["name"]}</div>', unsafe_allow_html=True)
@@ -528,8 +536,7 @@ elif page == "Toevoegen":
                     description,
                     [entry["id"] for entry in team_players if entry["name"] in selected_people],
                 )
-                st.success("Taak toegevoegd.")
-                st.rerun()
+                finish_action("Taak toegevoegd.", "Toevoegen")
     with tab_idea:
         folders = db.get_folders()
         if not folders:
@@ -543,8 +550,7 @@ elif page == "Toevoegen":
             points = st.number_input("Voorstel voor punten", min_value=0.0, value=0.0, step=0.1, format="%.1f", key="idea_pts")
             if st.button("Idee plaatsen", type="primary", disabled=not title, key="idea_save"):
                 db.add_idea(folder["id"], player["id"], title, description, points)
-                st.success("Idee toegevoegd.")
-                st.rerun()
+                finish_action("Idee toegevoegd.", "Toevoegen")
     with tab_folder:
         name = st.text_input("Naam brainstormmap", key="folder_name")
         icon = st.text_input("Icoon", value="📁", key="folder_icon")
@@ -554,8 +560,7 @@ elif page == "Toevoegen":
             except ValueError as exc:
                 st.error(str(exc))
             else:
-                st.success("Map gemaakt.")
-                st.rerun()
+                finish_action("Map gemaakt.", "Toevoegen")
 
 elif page == "Activiteiten":
     render_page_title("Activiteiten")
@@ -573,6 +578,9 @@ elif page == "Activiteiten":
                 f'<br><span class="muted">{activity["activity_date"]}</span><br>{activity["description"] or ""}</div>',
                 unsafe_allow_html=True,
             )
+            if st.button("Activiteit verwijderen", key=f"delete_own_activity_{activity['id']}", use_container_width=True):
+                db.delete_activity(activity["id"])
+                finish_action("Activiteit verwijderd.", "Activiteiten")
             with st.expander("Wijziging aanvragen"):
                 text = st.text_area(
                     "Wat wil je wijzigen?",
@@ -581,16 +589,98 @@ elif page == "Activiteiten":
                 )
                 if st.button("Verzoek versturen", key=f"chg_btn_{activity['id']}", disabled=not text):
                     db.request_change(activity["id"], player["id"], text)
-                    st.success("Verzoek verstuurd.")
+                    finish_action("Wijzigingsverzoek verstuurd.", "Activiteiten")
     else:
         st.caption("Alle recente activiteiten van het team.")
-        for activity in db.get_activities():
+        team_activities = db.get_activities()
+        for activity in team_activities:
             st.markdown(
                 f'<div class="card">{activity["icon"]} <b>{activity["player_name"]}</b> · {activity["activity_name"]}'
                 f'<span style="float:right"><b>+{activity["points"]}</b></span>'
                 f'<br><span class="muted">{activity["activity_date"]}</span><br>{activity["description"] or ""}</div>',
                 unsafe_allow_html=True,
             )
+        if is_admin(player):
+            st.markdown('<div class="section">Beheer alle activiteiten</div>', unsafe_allow_html=True)
+            activity_types = db.get_activity_types(include_inactive=True)
+            type_by_id = {entry["id"]: entry for entry in activity_types}
+            type_labels = []
+            for entry in activity_types:
+                suffix = "" if entry["active"] else " (verborgen)"
+                type_labels.append(f"{entry['icon']} {entry['name']}{suffix}")
+            if not team_activities:
+                st.caption("Er zijn nog geen activiteiten toegevoegd.")
+            for activity in team_activities:
+                current_values = json.loads(activity.get("field_values_json") or "{}")
+                current_type_id = activity["activity_type_id"] if activity["activity_type_id"] in type_by_id else activity_types[0]["id"]
+                current_index = next(index for index, entry in enumerate(activity_types) if entry["id"] == current_type_id)
+                with st.expander(f"{activity['player_name']} · {activity['activity_name']} · {activity['activity_date']}", expanded=False):
+                    selected_player = st.selectbox(
+                        "Speler",
+                        player_names,
+                        index=player_names.index(activity["player_name"]) if activity["player_name"] in player_names else 0,
+                        key=f"manage_activity_player_{activity['id']}",
+                    )
+                    selected_label = st.selectbox(
+                        "Activiteitstype",
+                        type_labels,
+                        index=current_index,
+                        key=f"manage_activity_type_{activity['id']}",
+                    )
+                    selected_type = activity_types[type_labels.index(selected_label)]
+                    selected_fields = db.get_fields(selected_type["id"])
+                    values = {}
+                    computed_points = float(selected_type["base_points"])
+                    for field in selected_fields:
+                        options = field["options"]
+                        option_labels = [f"{option['label']} · +{option['points']} pt" for option in options]
+                        default_index = 0
+                        for index, option in enumerate(options):
+                            if current_values.get(field["label"]) == option["label"]:
+                                default_index = index
+                                break
+                        chosen_label = st.selectbox(
+                            field["label"],
+                            option_labels,
+                            index=default_index,
+                            key=f"manage_activity_field_{activity['id']}_{field['id']}",
+                        )
+                        chosen_option = options[option_labels.index(chosen_label)]
+                        values[field["label"]] = chosen_option["label"]
+                        computed_points += float(chosen_option["points"])
+                    activity_date = st.date_input(
+                        "Datum",
+                        value=pd.to_datetime(activity["activity_date"]).date(),
+                        key=f"manage_activity_date_{activity['id']}",
+                    )
+                    description = st.text_area(
+                        "Beschrijving",
+                        value=activity["description"] or "",
+                        key=f"manage_activity_desc_{activity['id']}",
+                    )
+                    points = st.number_input(
+                        "Punten",
+                        min_value=0.0,
+                        value=float(activity["points"]),
+                        step=0.1,
+                        format="%.1f",
+                        key=f"manage_activity_points_{activity['id']}",
+                        help=f"Automatische berekening op basis van type en keuzes: {computed_points:.1f} punten",
+                    )
+                    if st.button("Activiteit opslaan", key=f"manage_activity_save_{activity['id']}", type="primary", use_container_width=True):
+                        db.update_activity(
+                            activity["id"],
+                            player_name_to_id[selected_player],
+                            selected_type["id"],
+                            activity_date,
+                            description,
+                            values,
+                            points,
+                        )
+                        finish_action("Activiteit bijgewerkt.", "Activiteiten", view="team")
+                    if st.button("Activiteit verwijderen", key=f"manage_activity_delete_{activity['id']}", use_container_width=True):
+                        db.delete_activity(activity["id"])
+                        finish_action("Activiteit verwijderd.", "Activiteiten", view="team")
 
 elif page == "Agenda":
     render_page_title("Agenda")
@@ -671,8 +761,7 @@ elif page == "Ideeën":
                     st.error(str(exc))
                 else:
                     st.session_state["show_new_folder_form"] = False
-                    st.success("Map gemaakt.")
-                    st.rerun()
+                    finish_action("Map gemaakt.", "Ideeën")
             if col2.button("Annuleren", key="new_folder_cancel_inline", use_container_width=True):
                 st.session_state["show_new_folder_form"] = False
                 st.rerun()
@@ -703,10 +792,10 @@ elif page == "Ideeën":
                 down_type = "primary" if idea["current_vote"] == -1 else "secondary"
                 if col1.button(f"👍 {idea['likes']}", key=f"vote_up_{idea['id']}", type=up_type, use_container_width=True):
                     db.cast_idea_vote(idea["id"], player["id"], 1)
-                    st.rerun()
+                    finish_action("Stem opgeslagen.", "Ideeën", folder=folder["id"])
                 if col2.button(f"👎 {idea['dislikes']}", key=f"vote_down_{idea['id']}", type=down_type, use_container_width=True):
                     db.cast_idea_vote(idea["id"], player["id"], -1)
-                    st.rerun()
+                    finish_action("Stem opgeslagen.", "Ideeën", folder=folder["id"])
                 st.markdown(f"**Puntenvoorstel:** {idea['points_suggestion'] or 0}")
                 st.markdown('<div class="subsection-title">Reacties</div>', unsafe_allow_html=True)
                 if not idea["comments"]:
@@ -716,14 +805,14 @@ elif page == "Ideeën":
                 body = st.text_input("Reageer", key=f"comment_{idea['id']}")
                 if st.button("Plaatsen", key=f"comment_btn_{idea['id']}", disabled=not body):
                     db.add_comment(idea["id"], player["id"], body)
-                    st.rerun()
+                    finish_action("Reactie geplaatst.", "Ideeën", folder=folder["id"])
                 if is_admin(player):
                     statuses = ["Nieuw idee", "In bespreking", "Gekozen", "Uitgevoerd", "Geparkeerd", "Niet uitvoeren"]
                     current_index = statuses.index(idea["status"]) if idea["status"] in statuses else 0
                     status = st.selectbox("Status", statuses, index=current_index, key=f"status_{idea['id']}")
                     if st.button("Status opslaan", key=f"status_btn_{idea['id']}"):
                         db.set_idea_status(idea["id"], status)
-                        st.rerun()
+                        finish_action("Ideestatus opgeslagen.", "Ideeën", folder=folder["id"])
 
         if st.button("+ Idee toevoegen", key=f"show_add_idea_{folder['id']}", use_container_width=True):
             state_key = f"show_add_idea_form_{folder['id']}"
@@ -736,8 +825,7 @@ elif page == "Ideeën":
             if col1.button("Idee opslaan", key=f"folder_idea_save_{folder['id']}", disabled=not title, use_container_width=True):
                 db.add_idea(folder["id"], player["id"], title, description, points)
                 st.session_state[f"show_add_idea_form_{folder['id']}"] = False
-                st.success("Idee toegevoegd.")
-                st.rerun()
+                finish_action("Idee toegevoegd.", "Ideeën", folder=folder["id"])
             if col2.button("Annuleren", key=f"folder_idea_cancel_{folder['id']}", use_container_width=True):
                 st.session_state[f"show_add_idea_form_{folder['id']}"] = False
                 st.rerun()
@@ -868,6 +956,9 @@ elif page == "Teamrekening":
             st.caption("Je hebt nog geen uitgaven ingediend.")
         for transaction in own_expenses:
             render_transaction_card(transaction, show_receipt=False)
+            if st.button("Uitgave verwijderen", key=f"delete_own_expense_{transaction['id']}", use_container_width=True):
+                db.delete_transaction(transaction["id"])
+                finish_action("Uitgave verwijderd.", "Teamrekening")
 
     with tabs[1]:
         expense_date = st.date_input("Datum", date.today(), key="money_expense_date")
@@ -900,8 +991,7 @@ elif page == "Teamrekening":
                     receipt_data=upload.getvalue() if upload else None,
                     review_status="pending",
                 )
-                st.success("Uitgave ingediend. Kieft of Beheerder kan deze nu controleren.")
-                st.rerun()
+                finish_action("Uitgave ingediend. Kieft of Beheerder kan deze nu controleren.", "Teamrekening")
 
     with tabs[2]:
         income_date = st.date_input("Datum", date.today(), key="money_income_date")
@@ -923,8 +1013,7 @@ elif page == "Teamrekening":
                     submitted_by_player_id=player["id"],
                     review_status="approved",
                 )
-                st.success("Inkomst opgeslagen.")
-                st.rerun()
+                finish_action("Inkomst opgeslagen.", "Teamrekening")
 
     if can_review_expenses(player):
         with tabs[3]:
@@ -948,10 +1037,10 @@ elif page == "Teamrekening":
                 col1, col2 = st.columns(2)
                 if col1.button("Accepteren", key=f"approve_tx_{transaction['id']}", use_container_width=True):
                     db.set_transaction_review(transaction["id"], "approved", player["id"])
-                    st.rerun()
+                    finish_action("Uitgave goedgekeurd.", "Teamrekening")
                 if col2.button("Afwijzen", key=f"reject_tx_{transaction['id']}", use_container_width=True):
                     db.set_transaction_review(transaction["id"], "rejected", player["id"])
-                    st.rerun()
+                    finish_action("Uitgave afgewezen.", "Teamrekening")
                 with st.expander(f"Bewerken · {transaction['description']}", expanded=False):
                     review_date = st.date_input("Datum", value=pd.to_datetime(transaction["transaction_date"]).date(), key=f"review_date_{transaction['id']}")
                     review_amount = st.number_input("Bedrag (€)", min_value=0.0, value=float(transaction["amount"]), key=f"review_amount_{transaction['id']}")
@@ -1008,8 +1097,7 @@ elif page == "Teamrekening":
                         except ValueError as exc:
                             st.error(str(exc))
                         else:
-                            st.success("Uitgave bijgewerkt.")
-                            st.rerun()
+                            finish_action("Uitgave bijgewerkt.", "Teamrekening")
 
 elif page == "Wijzigingsverzoeken" and is_admin(player):
     render_page_title("Wijzigingsverzoeken")
@@ -1025,10 +1113,10 @@ elif page == "Wijzigingsverzoeken" and is_admin(player):
         col1, col2 = st.columns(2)
         if col1.button("Goedkeuren", key=f"approve_{request['id']}", use_container_width=True):
             db.resolve_change_request(request["id"], "approved")
-            st.rerun()
+            finish_action("Wijzigingsverzoek goedgekeurd.", "Wijzigingsverzoeken")
         if col2.button("Afwijzen", key=f"reject_{request['id']}", use_container_width=True):
             db.resolve_change_request(request["id"], "rejected")
-            st.rerun()
+            finish_action("Wijzigingsverzoek afgewezen.", "Wijzigingsverzoeken")
 
 elif page == "Instellingen" and is_admin(player):
     render_page_title("Activiteiten instellen")
@@ -1038,7 +1126,7 @@ elif page == "Instellingen" and is_admin(player):
             points = st.number_input("Basispunten", min_value=0.0, value=float(activity_type["base_points"]),step=0.1,format="%.1f",key=f"base_{activity_type['id']}")
             if st.button("Basispunten opslaan", key=f"base_save_{activity_type['id']}"):
                 db.update_activity_base_points(activity_type["id"], points)
-                st.rerun()
+                finish_action("Basispunten opgeslagen.", "Instellingen")
             fields = db.get_fields(activity_type["id"])
             for field in fields:
                 st.markdown(f"**{field['label']}**")
@@ -1070,12 +1158,10 @@ elif page == "Instellingen" and is_admin(player):
                         st.error("Vul een veldnaam en minimaal één optie in.")
                     else:
                         db.update_select_field(field["id"], edit_label, valid_options)
-                        st.success("Keuzeveld bijgewerkt.")
-                        st.rerun()
+                        finish_action("Keuzeveld bijgewerkt.", "Instellingen")
                 if col2.button("Keuzeveld verwijderen", key=f"delete_field_{field['id']}", use_container_width=True):
                     db.delete_select_field(field["id"])
-                    st.success("Keuzeveld verwijderd.")
-                    st.rerun()
+                    finish_action("Keuzeveld verwijderd.", "Instellingen")
             st.markdown("**+ Eigen keuzeveld toevoegen**")
             label = st.text_input("Onderwerp / veldnaam", placeholder="Bijv. Aanwezigheid", key=f"new_field_{activity_type['id']}")
             count = st.number_input("Aantal opties", min_value=1, max_value=6, value=2, key=f"opt_count_{activity_type['id']}")
@@ -1091,16 +1177,14 @@ elif page == "Instellingen" and is_admin(player):
                 disabled=not label or any(not name for name, _ in options),
             ):
                 db.add_select_field(activity_type["id"], label, options)
-                st.success("Veld toegevoegd.")
-                st.rerun()
+                finish_action("Keuzeveld toegevoegd.", "Instellingen")
             if st.button("Activiteitstype verwijderen", key=f"delete_type_{activity_type['id']}", use_container_width=True):
                 try:
                     db.delete_activity_type(activity_type["id"])
                 except Exception as exc:
                     st.error(f"Verwijderen mislukt: {exc}")
                 else:
-                    st.success("Activiteitstype verwijderd.")
-                    st.rerun()
+                    finish_action("Activiteitstype verwijderd.", "Instellingen")
     st.divider()
     st.markdown("### Nieuw activiteitstype")
     name = st.text_input("Naam", key="new_type_name")
@@ -1113,8 +1197,7 @@ elif page == "Instellingen" and is_admin(player):
         except ValueError as exc:
             st.error(str(exc))
         else:
-            st.success("Toegevoegd.")
-            st.rerun()
+            finish_action("Activiteitstype toegevoegd.", "Instellingen")
     st.divider()
     st.markdown("### Taken beheren")
     activity_types = db.get_activity_types()
@@ -1160,9 +1243,7 @@ elif page == "Instellingen" and is_admin(player):
                     description,
                     [entry["id"] for entry in team_players if entry["name"] in selected_people],
                 )
-                st.success("Taak bijgewerkt.")
-                st.rerun()
+                finish_action("Taak bijgewerkt.", "Instellingen")
             if col2.button("Taak verwijderen", key=f"manage_task_delete_{task['id']}", use_container_width=True):
                 db.delete_task(task["id"])
-                st.success("Taak verwijderd.")
-                st.rerun()
+                finish_action("Taak verwijderd.", "Instellingen")
