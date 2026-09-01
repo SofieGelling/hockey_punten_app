@@ -958,7 +958,7 @@ elif page == "Teamrekening":
     balance_history = db.get_balance_history(statuses=["approved"])
     tab_names = ["Overzicht", "Uitgave toevoegen", "Inkomst toevoegen"]
     if can_review_expenses(player):
-        tab_names.append("Te controleren uitgaven")
+        tab_names.extend(["Financieel beheer", "Te controleren uitgaven"])
     tabs = st.tabs(tab_names)
 
     with tabs[0]:
@@ -1018,7 +1018,7 @@ elif page == "Teamrekening":
             render_transaction_card(transaction, show_receipt=False)
 
         st.markdown('<div class="section">Mijn ingediende uitgaven</div>', unsafe_allow_html=True)
-        own_expenses = db.get_transactions(transaction_type="expense", submitted_by=player["id"], statuses=["pending", "approved", "rejected"])
+        own_expenses = db.get_transactions(transaction_type="expense", submitted_by=player["id"], statuses=["pending", "approved"])
         if not own_expenses:
             st.caption("Je hebt nog geen uitgaven ingediend.")
         for transaction in own_expenses:
@@ -1084,7 +1084,7 @@ elif page == "Teamrekening":
 
     if can_review_expenses(player):
         with tabs[3]:
-            all_finance_rows = db.get_transactions(statuses=["pending", "approved", "rejected"], include_receipt_data=True)
+            all_finance_rows = db.get_transactions(statuses=["pending", "approved"], include_receipt_data=True)
             export_modes = ["Maand", "Jaar", "Totaal"]
             month_options = sorted({row["transaction_date"][:7] for row in all_finance_rows}, reverse=True)
             year_options = sorted({row["transaction_date"][:4] for row in all_finance_rows}, reverse=True)
@@ -1155,9 +1155,10 @@ elif page == "Teamrekening":
                 else:
                     st.caption("Geen bestand geüpload.")
 
+        with tabs[4]:
             st.markdown('<div class="section">Te controleren uitgaven</div>', unsafe_allow_html=True)
             filter_choice = st.segmented_control("Controlelijst", ["Te controleren", "Alles"], default="Te controleren", key="review_filter")
-            statuses = ["pending"] if filter_choice == "Te controleren" else ["pending", "approved", "rejected"]
+            statuses = ["pending"] if filter_choice == "Te controleren" else ["pending", "approved"]
             review_items = db.get_transactions(transaction_type="expense", statuses=statuses, include_receipt_data=True)
             if not review_items:
                 st.info("Geen uitgaven in deze lijst.")
@@ -1173,6 +1174,15 @@ elif page == "Teamrekening":
                     ),
                     unsafe_allow_html=True,
                 )
+                if transaction.get("receipt_data"):
+                    st.download_button(
+                        "Bonnetje openen",
+                        data=transaction["receipt_data"],
+                        file_name=transaction.get("receipt_name") or f"bonnetje-{transaction['id']}",
+                        mime=guess_mime(transaction.get("receipt_name")),
+                        key=f"review_receipt_open_{transaction['id']}",
+                        use_container_width=True,
+                    )
                 col1, col2 = st.columns(2)
                 if col1.button("Accepteren", key=f"approve_tx_{transaction['id']}", use_container_width=True):
                     db.set_transaction_review(transaction["id"], "approved", player["id"])
