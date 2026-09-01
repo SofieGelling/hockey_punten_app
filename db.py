@@ -410,8 +410,13 @@ def get_tasks(include_past=False):
                     """,
                     (task["id"],),
                 )
-            )
+        )
         return tasks
+
+
+def get_task(task_id):
+    tasks = get_tasks(include_past=True)
+    return next((task for task in tasks if task["id"] == task_id), None)
 
 
 def tasks_for_player(pid, include_past=False):
@@ -439,6 +444,35 @@ def add_task(title, task_date, task_time, type_id, category, description, player
         )
         for pid in player_ids:
             con.execute("INSERT INTO task_assignments(task_id,player_id) VALUES(?,?)", (cur.lastrowid, pid))
+
+
+def update_task(task_id, title, task_date, task_time, type_id, category, description, player_ids):
+    with connection() as con:
+        con.execute(
+            """
+            UPDATE tasks
+            SET title=?, task_date=?, task_time=?, activity_type_id=?, category=?, description=?
+            WHERE id=?
+            """,
+            (
+                clean_text(title),
+                str(task_date),
+                clean_text(task_time),
+                type_id,
+                clean_text(category, "team") or "team",
+                clean_text(description),
+                task_id,
+            ),
+        )
+        con.execute("DELETE FROM task_assignments WHERE task_id=?", (task_id,))
+        for pid in player_ids:
+            con.execute("INSERT INTO task_assignments(task_id,player_id) VALUES(?,?)", (task_id, pid))
+
+
+def delete_task(task_id):
+    with connection() as con:
+        con.execute("DELETE FROM task_assignments WHERE task_id=?", (task_id,))
+        con.execute("DELETE FROM tasks WHERE id=?", (task_id,))
 
 
 def get_folders():
@@ -556,6 +590,11 @@ def add_activity_type(name, icon, category, base_points):
         raise ValueError("Er bestaat al een activiteitstype met deze naam.") from exc
 
 
+def delete_activity_type(activity_type_id):
+    with connection() as con:
+        con.execute("UPDATE activity_types SET active=0 WHERE id=?", (activity_type_id,))
+
+
 def update_activity_base_points(tid, pts):
     with connection() as con:
         con.execute("UPDATE activity_types SET base_points=? WHERE id=?", (int(pts), tid))
@@ -566,6 +605,23 @@ def add_select_field(tid, label, options):
         cur = con.execute("INSERT INTO activity_fields(activity_type_id,label,field_type) VALUES(?,?,?)", (tid, clean_text(label), "select"))
         for name, pts in options:
             con.execute("INSERT INTO activity_field_options(field_id,label,points) VALUES(?,?,?)", (cur.lastrowid, clean_text(name), int(pts)))
+
+
+def update_select_field(field_id, label, options):
+    with connection() as con:
+        con.execute("UPDATE activity_fields SET label=? WHERE id=?", (clean_text(label), field_id))
+        con.execute("DELETE FROM activity_field_options WHERE field_id=?", (field_id,))
+        for name, pts in options:
+            con.execute(
+                "INSERT INTO activity_field_options(field_id,label,points) VALUES(?,?,?)",
+                (field_id, clean_text(name), int(pts)),
+            )
+
+
+def delete_select_field(field_id):
+    with connection() as con:
+        con.execute("DELETE FROM activity_field_options WHERE field_id=?", (field_id,))
+        con.execute("DELETE FROM activity_fields WHERE id=?", (field_id,))
 
 
 def get_transaction(transaction_id, include_receipt_data=False):

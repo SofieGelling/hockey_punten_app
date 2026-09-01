@@ -1042,7 +1042,38 @@ elif page == "Instellingen" and is_admin(player):
             fields = db.get_fields(activity_type["id"])
             for field in fields:
                 st.markdown(f"**{field['label']}**")
-                st.caption(" · ".join(f"{option['label']} (+{option['points']})" for option in field["options"]))
+                edit_label = st.text_input("Veldnaam", value=field["label"], key=f"edit_field_label_{field['id']}")
+                option_rows = []
+                existing_options = field["options"] or []
+                option_count = max(1, len(existing_options))
+                for index in range(option_count):
+                    option = existing_options[index] if index < len(existing_options) else {"label": "", "points": 0}
+                    col1, col2 = st.columns([2, 1])
+                    option_name = col1.text_input(
+                        f"Optie {index + 1}",
+                        value=option["label"],
+                        key=f"edit_field_option_name_{field['id']}_{index}",
+                    )
+                    option_points = col2.number_input(
+                        "Punten",
+                        min_value=0,
+                        value=int(option["points"]),
+                        key=f"edit_field_option_points_{field['id']}_{index}",
+                    )
+                    option_rows.append((option_name, option_points))
+                col1, col2 = st.columns(2)
+                if col1.button("Keuzeveld opslaan", key=f"save_field_{field['id']}", use_container_width=True):
+                    valid_options = [(name, points) for name, points in option_rows if str(name).strip()]
+                    if not edit_label or not valid_options:
+                        st.error("Vul een veldnaam en minimaal één optie in.")
+                    else:
+                        db.update_select_field(field["id"], edit_label, valid_options)
+                        st.success("Keuzeveld bijgewerkt.")
+                        st.rerun()
+                if col2.button("Keuzeveld verwijderen", key=f"delete_field_{field['id']}", use_container_width=True):
+                    db.delete_select_field(field["id"])
+                    st.success("Keuzeveld verwijderd.")
+                    st.rerun()
             st.markdown("**+ Eigen keuzeveld toevoegen**")
             label = st.text_input("Onderwerp / veldnaam", placeholder="Bijv. Aanwezigheid", key=f"new_field_{activity_type['id']}")
             count = st.number_input("Aantal opties", min_value=1, max_value=6, value=2, key=f"opt_count_{activity_type['id']}")
@@ -1060,6 +1091,10 @@ elif page == "Instellingen" and is_admin(player):
                 db.add_select_field(activity_type["id"], label, options)
                 st.success("Veld toegevoegd.")
                 st.rerun()
+            if st.button("Activiteitstype verwijderen", key=f"delete_type_{activity_type['id']}", use_container_width=True):
+                db.delete_activity_type(activity_type["id"])
+                st.success("Activiteitstype verwijderd.")
+                st.rerun()
     st.divider()
     st.markdown("### Nieuw activiteitstype")
     name = st.text_input("Naam", key="new_type_name")
@@ -1074,3 +1109,54 @@ elif page == "Instellingen" and is_admin(player):
         else:
             st.success("Toegevoegd.")
             st.rerun()
+    st.divider()
+    st.markdown("### Taken beheren")
+    activity_types = db.get_activity_types()
+    task_types = {entry["id"]: entry for entry in activity_types}
+    team_players = [entry for entry in players if entry["role"] == "player"]
+    tasks = db.get_tasks(include_past=True)
+    if not tasks:
+        st.caption("Er zijn nog geen taken toegevoegd.")
+    for task in tasks:
+        assigned_names = [assignment["name"] for assignment in task["assignments"]]
+        with st.expander(f"{task['title']} · {task['task_date']} · {', '.join(assigned_names) or 'Geen spelers'}", expanded=False):
+            title = st.text_input("Taaknaam", value=task["title"], key=f"manage_task_title_{task['id']}")
+            task_date = st.date_input("Datum", value=pd.to_datetime(task["task_date"]).date(), key=f"manage_task_date_{task['id']}")
+            task_time = st.text_input("Tijd", value=task["task_time"] or "", key=f"manage_task_time_{task['id']}")
+            if activity_types:
+                type_labels = [f"{entry['icon']} {entry['name']}" for entry in activity_types]
+                current_type_id = task["activity_type_id"] if task["activity_type_id"] in task_types else activity_types[0]["id"]
+                current_index = next(index for index, entry in enumerate(activity_types) if entry["id"] == current_type_id)
+                selected_label = st.selectbox("Activiteitstype", type_labels, index=current_index, key=f"manage_task_type_{task['id']}")
+                selected_type = activity_types[type_labels.index(selected_label)]
+                category = selected_type["category"]
+                type_id = selected_type["id"]
+            else:
+                st.warning("Er zijn geen activiteitstypes beschikbaar.")
+                category = task["category"]
+                type_id = task["activity_type_id"]
+            selected_people = st.multiselect(
+                "Toewijzen aan",
+                [entry["name"] for entry in team_players],
+                default=assigned_names,
+                key=f"manage_task_people_{task['id']}",
+            )
+            description = st.text_area("Beschrijving", value=task["description"] or "", key=f"manage_task_desc_{task['id']}")
+            col1, col2 = st.columns(2)
+            if col1.button("Taak opslaan", key=f"manage_task_save_{task['id']}", type="primary", use_container_width=True):
+                db.update_task(
+                    task["id"],
+                    title,
+                    task_date,
+                    task_time,
+                    type_id,
+                    category,
+                    description,
+                    [entry["id"] for entry in team_players if entry["name"] in selected_people],
+                )
+                st.success("Taak bijgewerkt.")
+                st.rerun()
+            if col2.button("Taak verwijderen", key=f"manage_task_delete_{task['id']}", use_container_width=True):
+                db.delete_task(task["id"])
+                st.success("Taak verwijderd.")
+                st.rerun()
