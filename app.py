@@ -36,6 +36,7 @@ VALID_PAGES = {
 }
 
 PAGE_ALIASES = {"Ranglijst": "Ranglijst punten"}
+ADMIN_PASSWORD = "Beheerder123"
 
 st.markdown(
     """
@@ -394,9 +395,15 @@ def login():
     players = db.get_players()
     names = [entry["name"] for entry in players]
     name = st.selectbox("Wie ben je?", names, index=None, placeholder="Kies je naam", key="login_name")
+    password = ""
+    if name == "Beheerder":
+        password = st.text_input("Wachtwoord beheerder", type="password", key="login_admin_password")
     if st.button("Inloggen", type="primary", use_container_width=True, disabled=name is None):
-        st.session_state.player_id = next(entry["id"] for entry in players if entry["name"] == name)
-        goto("Home")
+        if name == "Beheerder" and password != ADMIN_PASSWORD:
+            st.error("Onjuist wachtwoord voor Beheerder.")
+        else:
+            st.session_state.player_id = next(entry["id"] for entry in players if entry["name"] == name)
+            goto("Home")
 
 
 if "player_id" not in st.session_state:

@@ -159,6 +159,10 @@ def init_db():
             reviewed_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS app_meta(
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
         """
         )
 
@@ -250,113 +254,19 @@ def init_db():
                 ],
             )
 
-        if con.execute("SELECT COUNT(*) n FROM activities").fetchone()["n"] == 0:
-            players = {r["name"]: r["id"] for r in con.execute("SELECT id,name FROM players")}
-            activity_types = {r["name"]: r["id"] for r in con.execute("SELECT id,name FROM activity_types")}
-            today = date.today()
-            demo = [
-                (players["Sofie"], activity_types["Training geven"], str(today - timedelta(days=4)), "Training gegeven", "{}", 4),
-                (
-                    players["Sofie"],
-                    activity_types["Sleepover"],
-                    str(today - timedelta(days=3)),
-                    "Meegeholpen bij de sleepover",
-                    json.dumps({"Aanwezigheid": "Hele dag"}),
-                    6,
-                ),
-                (players["Jade"], activity_types["Geld ophalen"], str(today - timedelta(days=2)), "Sponsoractie · €450 opgehaald", "{}", 8),
-                (players["Leanne"], activity_types["Fluiten"], str(today - timedelta(days=6)), "Thuiswedstrijd gefloten", "{}", 3),
-                (players["Juul"], activity_types["Bardienst"], str(today - timedelta(days=7)), "Avonddienst", "{}", 3),
-                (players["Jasmijn"], activity_types["Training geven"], str(today - timedelta(days=8)), "Jeugdtraining", "{}", 4),
-                (players["Anna"], activity_types["Geld ophalen"], str(today - timedelta(days=9)), "Verkoopactie · €180 opgehaald", "{}", 5),
-            ]
-            con.executemany(
-                "INSERT INTO activities(player_id,activity_type_id,activity_date,description,field_values_json,points) VALUES(?,?,?,?,?,?)",
-                demo,
-            )
-
-        if con.execute("SELECT COUNT(*) n FROM tasks").fetchone()["n"] == 0:
-            players = {r["name"]: r["id"] for r in con.execute("SELECT id,name FROM players")}
-            activity_types = {r["name"]: r["id"] for r in con.execute("SELECT id,name FROM activity_types")}
-            today = date.today()
-            task_rows = [
-                ("Training jeugd", str(today + timedelta(days=2)), "18:30", activity_types["Training geven"], "training", "Training voor MO12"),
-                ("Fluitbeurt thuiswedstrijd", str(today + timedelta(days=4)), "13:00", activity_types["Fluiten"], "fluiten", "Veld 2"),
-                ("Sponsoractie centrum", str(today + timedelta(days=7)), "11:00", activity_types["Geld ophalen"], "geld", "Flyers en sponsorwerving"),
-                ("Bardienst", str(today + timedelta(days=10)), "20:00", activity_types["Bardienst"], "club", "Clubhuis"),
-            ]
-            task_ids = []
-            for row in task_rows:
-                cur = con.execute(
-                    "INSERT INTO tasks(title,task_date,task_time,activity_type_id,category,description) VALUES(?,?,?,?,?,?)",
-                    row,
-                )
-                task_ids.append(cur.lastrowid)
-            con.executemany(
-                "INSERT INTO task_assignments(task_id,player_id,response,reason) VALUES(?,?,?,?)",
-                [
-                    (task_ids[0], players["Sofie"], "can", ""),
-                    (task_ids[1], players["Sofie"], "pending", ""),
-                    (task_ids[1], players["Jade"], "cannot", "Werk tot 14:00"),
-                    (task_ids[2], players["Leanne"], "pending", ""),
-                    (task_ids[3], players["Juul"], "can", ""),
-                ],
-            )
-
-        if con.execute("SELECT COUNT(*) n FROM brainstorm_folders").fetchone()["n"] == 0:
-            admin = con.execute("SELECT id FROM players WHERE name='Beheerder'").fetchone()["id"]
-            con.executemany(
-                "INSERT INTO brainstorm_folders(name,icon,created_by) VALUES(?,?,?)",
-                [("Geld ophalen", "💰", admin), ("Teamactiviteiten", "🎉", admin), ("Trainingen", "🏑", admin)],
-            )
-            folders = {r["name"]: r["id"] for r in con.execute("SELECT id,name FROM brainstorm_folders")}
-            players = {r["name"]: r["id"] for r in con.execute("SELECT id,name FROM players")}
-            con.executemany(
-                "INSERT INTO ideas(folder_id,author_id,title,description,points_suggestion,status) VALUES(?,?,?,?,?,?)",
-                [
-                    (folders["Geld ophalen"], players["Sofie"], "Sponsorloop", "Rondjes laten sponsoren door familie en bedrijven.", 8, "In bespreking"),
-                    (folders["Geld ophalen"], players["Jade"], "Pubquiz", "Kaartjes verkopen en lokale prijzen regelen.", 6, "Nieuw idee"),
-                    (folders["Teamactiviteiten"], players["Leanne"], "Teamdiner", "Gezamenlijk diner organiseren.", 0, "Nieuw idee"),
-                ],
-            )
-            ids = [r["id"] for r in con.execute("SELECT id FROM ideas ORDER BY id")]
-            con.executemany(
-                "INSERT OR IGNORE INTO idea_votes(idea_id,player_id,vote) VALUES(?,?,?)",
-                [(ids[0], players["Jade"], 1), (ids[0], players["Leanne"], 1), (ids[0], players["Juul"], 1), (ids[1], players["Sofie"], 1)],
-            )
-            con.executemany(
-                "INSERT INTO idea_comments(idea_id,player_id,body) VALUES(?,?,?)",
-                [
-                    (ids[0], players["Jade"], "Misschien kunnen we €5 per ronde laten sponsoren."),
-                    (ids[0], players["Leanne"], "8 punten voor de organisatie lijkt mij redelijk."),
-                ],
-            )
-
-        if con.execute("SELECT COUNT(*) n FROM notifications").fetchone()["n"] == 0:
-            sofie = con.execute("SELECT id FROM players WHERE name='Sofie'").fetchone()["id"]
-            con.executemany(
-                "INSERT INTO notifications(player_id,text) VALUES(?,?)",
-                [(sofie, "Je bent ingepland voor Training jeugd."), (sofie, "Jade reageerde op het idee Sponsorloop.")],
-            )
-
-        if con.execute("SELECT COUNT(*) n FROM team_transactions").fetchone()["n"] == 0:
-            players = {r["name"]: r["id"] for r in con.execute("SELECT id,name FROM players")}
-            today = date.today()
-            seed_rows = [
-                ("income", str(today - timedelta(days=12)), 450.0, "Sponsoractie", "Opbrengst sponsoractie", players["Jade"], players["Jade"], "", None, None, "approved"),
-                ("expense", str(today - timedelta(days=9)), 86.40, "Teamactiviteit", "Boodschappen sleepover", players["Sofie"], players["Sofie"], "lost", None, None, "approved"),
-                ("income", str(today - timedelta(days=5)), 180.0, "Verkoop", "Verkoopactie", players["Anna"], players["Anna"], "", None, None, "approved"),
-                ("expense", str(today - timedelta(days=2)), 42.75, "Materiaal", "Print- en promotiemateriaal", players["Leanne"], players["Leanne"], "lost", None, None, "approved"),
-            ]
-            con.executemany(
-                """
-                INSERT INTO team_transactions(
-                    transaction_type,transaction_date,amount,category,description,player_id,submitted_by,
-                    receipt_status,receipt_name,receipt_data,review_status
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                seed_rows,
-            )
+        reset_done = con.execute("SELECT value FROM app_meta WHERE key='clean_reset_v1'").fetchone()
+        if not reset_done:
+            con.execute("DELETE FROM activity_change_requests")
+            con.execute("DELETE FROM task_assignments")
+            con.execute("DELETE FROM tasks")
+            con.execute("DELETE FROM activities")
+            con.execute("DELETE FROM idea_comments")
+            con.execute("DELETE FROM idea_votes")
+            con.execute("DELETE FROM ideas")
+            con.execute("DELETE FROM brainstorm_folders")
+            con.execute("DELETE FROM notifications")
+            con.execute("DELETE FROM team_transactions")
+            con.execute("INSERT OR REPLACE INTO app_meta(key,value) VALUES('clean_reset_v1','done')")
 
 
 def get_players():
