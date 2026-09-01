@@ -1,7 +1,9 @@
 from datetime import date
 import calendar
+import io
 import json
 import mimetypes
+import zipfile
 from urllib.parse import urlencode
 
 import altair as alt
@@ -161,6 +163,71 @@ def render_page_title(text):
 def finish_action(message, page_name=None, **extra):
     st.session_state["flash_message"] = message
     goto(page_name or st.session_state.page, **extra)
+
+
+def build_transactions_export(transactions):
+    if not transactions:
+        return pd.DataFrame(
+            columns=[
+                "Datum",
+                "Type",
+                "Status",
+                "Bedrag",
+                "Categorie",
+                "Omschrijving",
+                "Betaald door",
+                "Ingediend door",
+                "Bonstatus",
+                "Beoordeeld door",
+                "Beoordeeld op",
+            ]
+        )
+    rows = []
+    for transaction in transactions:
+        rows.append(
+            {
+                "Datum": transaction["transaction_date"],
+                "Type": "Inkomst" if transaction["transaction_type"] == "income" else "Uitgave",
+                "Status": format_status(transaction.get("review_status") or "approved"),
+                "Bedrag": float(transaction["amount"]),
+                "Categorie": transaction.get("category") or "",
+                "Omschrijving": transaction["description"],
+                "Betaald door": transaction.get("paid_by_name") or "",
+                "Ingediend door": transaction.get("submitted_by_name") or "",
+                "Bonstatus": receipt_label(transaction.get("receipt_status")),
+                "Beoordeeld door": transaction.get("reviewer_name") or "",
+                "Beoordeeld op": transaction.get("reviewed_at") or "",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def filter_transactions_for_period(transactions, mode, month_key=None, year_value=None):
+    if mode == "Totaal":
+        return transactions
+    if mode == "Jaar" and year_value:
+        prefix = str(year_value)
+        return [transaction for transaction in transactions if transaction["transaction_date"].startswith(prefix)]
+    if mode == "Maand" and month_key:
+        return [transaction for transaction in transactions if transaction["transaction_date"].startswith(month_key)]
+    return []
+
+
+def build_receipts_zip(transactions):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        added = 0
+        for transaction in transactions:
+            if not transaction.get("receipt_data"):
+                continue
+            file_name = transaction.get("receipt_name") or f"bonnetje-{transaction['id']}.bin"
+            archive_name = f"{transaction['transaction_date']}_{transaction.get('paid_by_name') or 'team'}_{transaction['id']}_{file_name}"
+            archive.writestr(archive_name, transaction["receipt_data"])
+            added += 1
+    if buffer.getbuffer().nbytes == 0:
+        return None
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 def metric_strip(points, rank, activities):
@@ -1017,6 +1084,78 @@ elif page == "Teamrekening":
 
     if can_review_expenses(player):
         with tabs[3]:
+            all_finance_rows = db.get_transactions(statuses=["pending", "approved", "rejected"], include_receipt_data=True)
+            export_modes = ["Maand", "Jaar", "Totaal"]
+            month_options = sorted({row["transaction_date"][:7] for row in all_finance_rows}, reverse=True)
+            year_options = sorted({row["transaction_date"][:4] for row in all_finance_rows}, reverse=True)
+            st.markdown('<div class="section">Downloads en bonnetjes</div>', unsafe_allow_html=True)
+            export_mode = st.segmented_control("Download overzicht", export_modes, default="Maand", key="finance_export_mode")
+            selected_month = None
+            selected_year = None
+            if export_mode == "Maand":
+                if month_options:
+                    selected_month = st.selectbox("Maand", month_options, key="finance_export_month")
+                else:
+                    st.caption("Nog geen transacties om per maand te downloaden.")
+            elif export_mode == "Jaar":
+                if year_options:
+                    selected_year = st.selectbox("Jaar", year_options, key="finance_export_year")
+                else:
+                    st.caption("Nog geen transacties om per jaar te downloaden.")
+            filtered_rows = filter_transactions_for_period(all_finance_rows, export_mode, selected_month, selected_year)
+            export_frame = build_transactions_export(filtered_rows)
+            file_suffix = selected_month or selected_year or "totaal"
+            if not export_frame.empty:
+                st.download_button(
+                    "Download overzicht (CSV)",
+                    data=export_frame.to_csv(index=False).encode("utf-8"),
+                    file_name=f"teamrekening_overzicht_{file_suffix}.csv",
+                    mime="text/csv",
+                    key="finance_export_csv",
+                    use_container_width=True,
+                )
+                receipts_zip = build_receipts_zip(filtered_rows)
+                if receipts_zip:
+                    st.download_button(
+                        "Download bonnetjes (ZIP)",
+                        data=receipts_zip,
+                        file_name=f"teamrekening_bonnetjes_{file_suffix}.zip",
+                        mime="application/zip",
+                        key="finance_export_zip",
+                        use_container_width=True,
+                    )
+                else:
+                    st.caption("Geen bonnetjes beschikbaar in deze selectie.")
+                st.dataframe(export_frame, use_container_width=True, hide_index=True)
+            else:
+                st.info("Geen transacties in deze selectie.")
+
+            st.markdown('<div class="section">Alle bonnetjes</div>', unsafe_allow_html=True)
+            receipt_rows = [row for row in all_finance_rows if row["transaction_type"] == "expense"]
+            if not receipt_rows:
+                st.caption("Er zijn nog geen uitgaven toegevoegd.")
+            for transaction in receipt_rows:
+                st.markdown(
+                    f'<div class="card"><b>{transaction["description"]}</b>'
+                    f'<span style="float:right"><b>{format_euro(transaction["amount"])}</b></span>'
+                    f'<br><span class="muted">{transaction["transaction_date"]} · {transaction.get("category") or "Overig"} · {transaction.get("paid_by_name") or "Onbekend"}</span>'
+                    f'<br><span class="muted">{receipt_label(transaction.get("receipt_status"))}</span>'
+                    f'<br>{badge_status(transaction.get("review_status") or "approved")}</div>',
+                    unsafe_allow_html=True,
+                )
+                if transaction.get("receipt_data"):
+                    st.download_button(
+                        "Bonnetje bekijken",
+                        data=transaction["receipt_data"],
+                        file_name=transaction.get("receipt_name") or f"bonnetje-{transaction['id']}",
+                        mime=guess_mime(transaction.get("receipt_name")),
+                        key=f"receipt_overview_{transaction['id']}",
+                        use_container_width=True,
+                    )
+                else:
+                    st.caption("Geen bestand geüpload.")
+
+            st.markdown('<div class="section">Te controleren uitgaven</div>', unsafe_allow_html=True)
             filter_choice = st.segmented_control("Controlelijst", ["Te controleren", "Alles"], default="Te controleren", key="review_filter")
             statuses = ["pending"] if filter_choice == "Te controleren" else ["pending", "approved", "rejected"]
             review_items = db.get_transactions(transaction_type="expense", statuses=statuses, include_receipt_data=True)
