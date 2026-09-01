@@ -1056,8 +1056,10 @@ elif page == "Instellingen" and is_admin(player):
                     )
                     option_points = col2.number_input(
                         "Punten",
-                        min_value=0,
-                        value=int(option["points"]),
+                        min_value=0.0,
+                        value=float(option["points"]),
+                        step=0.1,
+                        format="%.1f",
                         key=f"edit_field_option_points_{field['id']}_{index}",
                     )
                     option_rows.append((option_name, option_points))
@@ -1092,9 +1094,13 @@ elif page == "Instellingen" and is_admin(player):
                 st.success("Veld toegevoegd.")
                 st.rerun()
             if st.button("Activiteitstype verwijderen", key=f"delete_type_{activity_type['id']}", use_container_width=True):
-                db.delete_activity_type(activity_type["id"])
-                st.success("Activiteitstype verwijderd.")
-                st.rerun()
+                try:
+                    db.delete_activity_type(activity_type["id"])
+                except Exception as exc:
+                    st.error(f"Verwijderen mislukt: {exc}")
+                else:
+                    st.success("Activiteitstype verwijderd.")
+                    st.rerun()
     st.divider()
     st.markdown("### Nieuw activiteitstype")
     name = st.text_input("Naam", key="new_type_name")

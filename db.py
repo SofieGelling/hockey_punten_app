@@ -297,7 +297,7 @@ def add_activity(player_id, type_id, activity_date, description, field_values, p
     with connection() as con:
         con.execute(
             "INSERT INTO activities(player_id,activity_type_id,activity_date,description,field_values_json,points) VALUES(?,?,?,?,?,?)",
-            (player_id, type_id, str(activity_date), clean_text(description), json.dumps(field_values, ensure_ascii=False), int(points)),
+            (player_id, type_id, str(activity_date), clean_text(description), json.dumps(field_values, ensure_ascii=False), float(points)),
         )
 
 
@@ -584,7 +584,7 @@ def add_activity_type(name, icon, category, base_points):
         with connection() as con:
             con.execute(
                 "INSERT INTO activity_types(name,icon,category,base_points) VALUES(?,?,?,?)",
-                (clean_text(name), clean_text(icon, "⭐") or "⭐", clean_text(category, "team") or "team", int(base_points)),
+                (clean_text(name), clean_text(icon, "⭐") or "⭐", clean_text(category, "team") or "team", float(base_points)),
             )
     except sqlite3.IntegrityError as exc:
         raise ValueError("Er bestaat al een activiteitstype met deze naam.") from exc
@@ -592,19 +592,28 @@ def add_activity_type(name, icon, category, base_points):
 
 def delete_activity_type(activity_type_id):
     with connection() as con:
-        con.execute("UPDATE activity_types SET active=0 WHERE id=?", (activity_type_id,))
+        task_count = con.execute("SELECT COUNT(*) FROM tasks WHERE activity_type_id=?", (activity_type_id,)).fetchone()[0]
+        activity_count = con.execute("SELECT COUNT(*) FROM activities WHERE activity_type_id=?", (activity_type_id,)).fetchone()[0]
+        if task_count == 0 and activity_count == 0:
+            field_ids = [row["id"] for row in con.execute("SELECT id FROM activity_fields WHERE activity_type_id=?", (activity_type_id,))]
+            for field_id in field_ids:
+                con.execute("DELETE FROM activity_field_options WHERE field_id=?", (field_id,))
+            con.execute("DELETE FROM activity_fields WHERE activity_type_id=?", (activity_type_id,))
+            con.execute("DELETE FROM activity_types WHERE id=?", (activity_type_id,))
+        else:
+            con.execute("UPDATE activity_types SET active=0 WHERE id=?", (activity_type_id,))
 
 
 def update_activity_base_points(tid, pts):
     with connection() as con:
-        con.execute("UPDATE activity_types SET base_points=? WHERE id=?", (int(pts), tid))
+        con.execute("UPDATE activity_types SET base_points=? WHERE id=?", (float(pts), tid))
 
 
 def add_select_field(tid, label, options):
     with connection() as con:
         cur = con.execute("INSERT INTO activity_fields(activity_type_id,label,field_type) VALUES(?,?,?)", (tid, clean_text(label), "select"))
         for name, pts in options:
-            con.execute("INSERT INTO activity_field_options(field_id,label,points) VALUES(?,?,?)", (cur.lastrowid, clean_text(name), int(pts)))
+            con.execute("INSERT INTO activity_field_options(field_id,label,points) VALUES(?,?,?)", (cur.lastrowid, clean_text(name), float(pts)))
 
 
 def update_select_field(field_id, label, options):
@@ -614,7 +623,7 @@ def update_select_field(field_id, label, options):
         for name, pts in options:
             con.execute(
                 "INSERT INTO activity_field_options(field_id,label,points) VALUES(?,?,?)",
-                (field_id, clean_text(name), int(pts)),
+                (field_id, clean_text(name), float(pts)),
             )
 
 
