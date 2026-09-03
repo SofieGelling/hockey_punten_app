@@ -1,16 +1,23 @@
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-DB_PATH = Path(__file__).with_name("teamapp_v2_5.db")
+# Keep the database outside deployable source files when a persistent volume is
+# available. The default retains the existing local database location.
+DB_PATH = Path(os.environ.get("TEAMAPP_DB_PATH", Path(__file__).with_name("teamapp_v2_5.db"))).expanduser()
 
 
 @contextmanager
 def connection():
-    con = sqlite3.connect(DB_PATH)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys = ON")
+    con.execute("PRAGMA busy_timeout = 5000")
+    con.execute("PRAGMA journal_mode = WAL")
     try:
         yield con
         con.commit()
@@ -253,21 +260,6 @@ def init_db():
                     (cur.lastrowid, "Anderhalve dag", 9),
                 ],
             )
-
-        reset_done = con.execute("SELECT value FROM app_meta WHERE key='clean_reset_v1'").fetchone()
-        if not reset_done:
-            con.execute("DELETE FROM activity_change_requests")
-            con.execute("DELETE FROM task_assignments")
-            con.execute("DELETE FROM tasks")
-            con.execute("DELETE FROM activities")
-            con.execute("DELETE FROM idea_comments")
-            con.execute("DELETE FROM idea_votes")
-            con.execute("DELETE FROM ideas")
-            con.execute("DELETE FROM brainstorm_folders")
-            con.execute("DELETE FROM notifications")
-            con.execute("DELETE FROM team_transactions")
-            con.execute("INSERT OR REPLACE INTO app_meta(key,value) VALUES('clean_reset_v1','done')")
-
 
 def get_players():
     with connection() as con:
