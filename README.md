@@ -15,16 +15,26 @@ De lokale database staat standaard in `teamapp_v2_5.db` naast de broncode. Dit
 bestand hoort niet verwijderd of vervangen te worden als de teamgeschiedenis
 behouden moet blijven.
 
-## Permanente opslag bij deployment
+## Permanente opslag op Streamlit Cloud
 
-Geef de app op een server een vast databestand op een permanente schijf mee:
+Voor Streamlit Community Cloud gebruikt de app PostgreSQL in Supabase. Zet in
+Streamlit Cloud bij je app onder `Settings` > `Secrets` deze gegevens uit
+Supabase `Connect` > `Session pooler`:
 
-```bash
-TEAMAPP_DB_PATH=/pad/naar/permanente-opslag/teamapp.db
+```toml
+[connections.postgresql]
+dialect = "postgresql"
+host = "aws-JOUW-REGIO.pooler.supabase.com"
+port = "5432"
+database = "postgres"
+username = "postgres.JOUW-PROJECT-ID"
+password = "JOUW-SUPABASE-DATABASE-WACHTWOORD"
 ```
 
-De map van dit pad moet een permanente volume/schijf van de host zijn. Een
-platform met alleen tijdelijke bestandsopslag kan een SQLite-bestand bij een
-herstart verliezen; daarvoor is een permanente volume of een externe database
-nodig. GitHub zelf is geen database en bewaart nieuwe invoer uit een draaiende
-app niet automatisch.
+Bij de eerste start maakt de app alle benodigde tabellen in Supabase aan.
+Daarna blijven activiteiten, punten, taken, ideeën, meldingen, uitgaven,
+inkomsten en bonnetjes in Supabase bewaard, ook na een herstart of nieuwe
+deployment. Plaats Secrets nooit in GitHub.
+
+Voor lokaal gebruik zonder Supabase blijft SQLite beschikbaar. Je kunt de locatie
+daarvan desgewenst instellen met `TEAMAPP_DB_PATH=/pad/naar/teamapp.db`.

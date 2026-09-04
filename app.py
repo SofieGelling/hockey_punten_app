@@ -13,6 +13,11 @@ import streamlit as st
 import db
 
 st.set_page_config(page_title="TeamApp", page_icon="🏑", layout="wide", initial_sidebar_state="auto")
+try:
+    postgres_config = st.secrets.get("connections", {}).get("postgresql")
+except FileNotFoundError:
+    postgres_config = None
+db.configure_database(postgres_config)
 db.init_db()
 
 CATEGORY = {

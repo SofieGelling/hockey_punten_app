@@ -3,3 +3,4 @@
 __pycache__/
 teamapp_v2_5.db
 teamapp_v2_5.db-*
+.streamlit/secrets.toml
