@@ -592,26 +592,31 @@ elif page == "Toevoegen":
         if not activity_types:
             st.warning("Er zijn nog geen activiteitstypes ingesteld voor taken.")
         else:
-            title = st.text_input("Taaknaam", key="task_title")
-            task_date = st.date_input("Datum", date.today(), key="task_date")
-            task_time = st.text_input("Tijd", placeholder="18:30", key="task_time")
-            labels = [f"{entry['icon']} {entry['name']}" for entry in activity_types]
-            selected_label = st.selectbox("Activiteitstype", labels, key="task_type")
-            activity_type = activity_types[labels.index(selected_label)]
-            selected_people = st.multiselect("Toewijzen aan", [entry["name"] for entry in team_players], key="task_people")
-            description = st.text_area("Beschrijving", key="task_desc")
-            st.caption(f"Punten volgen automatisch het activiteitstype. Basispunten: {activity_type['base_points']}.")
-            if st.button("Taak toevoegen", type="primary", disabled=not title, key="task_save"):
-                db.add_task(
-                    title,
-                    task_date,
-                    task_time,
-                    activity_type["id"],
-                    activity_type["category"],
-                    description,
-                    [entry["id"] for entry in team_players if entry["name"] in selected_people],
-                )
-                finish_action("Taak toegevoegd.", "Toevoegen")
+            with st.form("add_task_form", border=False):
+                title = st.text_input("Taaknaam", key="task_title")
+                task_date = st.date_input("Datum", date.today(), key="task_date")
+                task_time = st.text_input("Tijd", placeholder="18:30", key="task_time")
+                labels = [f"{entry['icon']} {entry['name']}" for entry in activity_types]
+                selected_label = st.selectbox("Activiteitstype", labels, key="task_type")
+                activity_type = activity_types[labels.index(selected_label)]
+                selected_people = st.multiselect("Toewijzen aan", [entry["name"] for entry in team_players], key="task_people")
+                description = st.text_area("Beschrijving", key="task_desc")
+                st.caption(f"Punten volgen automatisch het activiteitstype. Basispunten: {activity_type['base_points']}.")
+                task_submitted = st.form_submit_button("Taak toevoegen", type="primary", use_container_width=True)
+            if task_submitted:
+                if not title.strip():
+                    st.error("Vul een taaknaam in.")
+                else:
+                    db.add_task(
+                        title,
+                        task_date,
+                        task_time,
+                        activity_type["id"],
+                        activity_type["category"],
+                        description,
+                        [entry["id"] for entry in team_players if entry["name"] in selected_people],
+                    )
+                    finish_action("Taak toegevoegd.", "Toevoegen")
     with tab_idea:
         folders = db.get_folders()
         if not folders:
