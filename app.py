@@ -386,21 +386,23 @@ def activity_form():
     labels = [f"{row['icon']} {row['name']}" for row in types]
     choice = st.selectbox("Activiteit", labels, key="activity_type")
     activity_type = types[labels.index(choice)]
-    total = activity_type["base_points"]
-    values = {}
-    if activity_type["base_points"]:
-        st.caption(f"Basispunten: **{activity_type['base_points']}**")
-    for field in db.get_fields(activity_type["id"]):
-        if field["field_type"] == "select" and field["options"]:
-            options = [f"{option['label']} · +{option['points']} pt" for option in field["options"]]
-            selected = st.selectbox(field["label"], options, key=f"activity_field_{field['id']}")
-            option = field["options"][options.index(selected)]
-            values[field["label"]] = option["label"]
-            total += option["points"]
-    activity_date = st.date_input("Datum", date.today(), key="activity_date")
-    description = st.text_area("Beschrijving", placeholder="Bijv. sponsoractie · €450 opgehaald", key="activity_desc")
-    st.info(f"Deze activiteit levert **{total} punten** op en staat direct in je overzicht.")
-    if st.button("Activiteit opslaan", type="primary", use_container_width=True, key="activity_save"):
+    with st.form("add_activity_form", border=False):
+        total = activity_type["base_points"]
+        values = {}
+        if activity_type["base_points"]:
+            st.caption(f"Basispunten: **{activity_type['base_points']}**")
+        for field in db.get_fields(activity_type["id"]):
+            if field["field_type"] == "select" and field["options"]:
+                options = [f"{option['label']} · +{option['points']} pt" for option in field["options"]]
+                selected = st.selectbox(field["label"], options, key=f"activity_field_{field['id']}")
+                option = field["options"][options.index(selected)]
+                values[field["label"]] = option["label"]
+                total += option["points"]
+        activity_date = st.date_input("Datum", date.today(), key="activity_date")
+        description = st.text_area("Beschrijving", placeholder="Bijv. sponsoractie · €450 opgehaald", key="activity_desc")
+        st.caption("De punten worden definitief berekend bij opslaan.")
+        activity_submitted = st.form_submit_button("Activiteit opslaan", type="primary", use_container_width=True)
+    if activity_submitted:
         db.add_activity(player["id"], activity_type["id"], activity_date, description, values, total)
         finish_action("Activiteit opgeslagen.", "Toevoegen")
 
@@ -622,25 +624,35 @@ elif page == "Toevoegen":
         if not folders:
             st.info("Maak eerst een brainstormmap aan via het tabblad Map.")
         else:
-            labels = [f"{folder['icon']} {folder['name']}" for folder in folders]
-            selected = st.selectbox("Map", labels, key="idea_folder")
-            folder = folders[labels.index(selected)]
-            title = st.text_input("Idee", key="idea_title")
-            description = st.text_area("Uitleg", key="idea_desc")
-            points = st.number_input("Voorstel voor punten", min_value=0.0, value=0.0, step=0.1, format="%.1f", key="idea_pts")
-            if st.button("Idee plaatsen", type="primary", disabled=not title, key="idea_save"):
-                db.add_idea(folder["id"], player["id"], title, description, points)
-                finish_action("Idee toegevoegd.", "Toevoegen")
+            with st.form("add_idea_form", border=False):
+                labels = [f"{folder['icon']} {folder['name']}" for folder in folders]
+                selected = st.selectbox("Map", labels, key="idea_folder")
+                folder = folders[labels.index(selected)]
+                title = st.text_input("Idee", key="idea_title")
+                description = st.text_area("Uitleg", key="idea_desc")
+                points = st.number_input("Voorstel voor punten", min_value=0.0, value=0.0, step=0.1, format="%.1f", key="idea_pts")
+                idea_submitted = st.form_submit_button("Idee plaatsen", type="primary", use_container_width=True)
+            if idea_submitted:
+                if not title.strip():
+                    st.error("Vul een idee in.")
+                else:
+                    db.add_idea(folder["id"], player["id"], title, description, points)
+                    finish_action("Idee toegevoegd.", "Toevoegen")
     with tab_folder:
-        name = st.text_input("Naam brainstormmap", key="folder_name")
-        icon = st.text_input("Icoon", value="📁", key="folder_icon")
-        if st.button("Map maken", type="primary", disabled=not name, key="folder_save"):
-            try:
-                db.add_folder(name, icon, player["id"])
-            except ValueError as exc:
-                st.error(str(exc))
+        with st.form("add_folder_form", border=False):
+            name = st.text_input("Naam brainstormmap", key="folder_name")
+            icon = st.text_input("Icoon", value="📁", key="folder_icon")
+            folder_submitted = st.form_submit_button("Map maken", type="primary", use_container_width=True)
+        if folder_submitted:
+            if not name.strip():
+                st.error("Vul een mapnaam in.")
             else:
-                finish_action("Map gemaakt.", "Toevoegen")
+                try:
+                    db.add_folder(name, icon, player["id"])
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    finish_action("Map gemaakt.", "Toevoegen")
 
 elif page == "Activiteiten":
     render_page_title("Activiteiten")
@@ -831,20 +843,26 @@ elif page == "Ideeën":
             st.session_state["show_new_folder_form"] = not st.session_state.get("show_new_folder_form", False)
         if st.session_state.get("show_new_folder_form"):
             st.markdown('<div class="soft">', unsafe_allow_html=True)
-            new_name = st.text_input("Naam van de nieuwe map", key="new_folder_name_inline")
-            new_icon = st.text_input("Icoon", value="📁", key="new_folder_icon_inline")
-            col1, col2 = st.columns(2)
-            if col1.button("Map opslaan", key="new_folder_save_inline", disabled=not new_name, use_container_width=True):
-                try:
-                    db.add_folder(new_name, new_icon, player["id"])
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    st.session_state["show_new_folder_form"] = False
-                    finish_action("Map gemaakt.", "Ideeën")
-            if col2.button("Annuleren", key="new_folder_cancel_inline", use_container_width=True):
+            with st.form("new_folder_inline_form", border=False):
+                new_name = st.text_input("Naam van de nieuwe map", key="new_folder_name_inline")
+                new_icon = st.text_input("Icoon", value="📁", key="new_folder_icon_inline")
+                col1, col2 = st.columns(2)
+                save_folder = col1.form_submit_button("Map opslaan", use_container_width=True)
+                cancel_folder = col2.form_submit_button("Annuleren", use_container_width=True)
+            if cancel_folder:
                 st.session_state["show_new_folder_form"] = False
                 st.rerun()
+            if save_folder:
+                if not new_name.strip():
+                    st.error("Vul een mapnaam in.")
+                else:
+                    try:
+                        db.add_folder(new_name, new_icon, player["id"])
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        st.session_state["show_new_folder_form"] = False
+                        finish_action("Map gemaakt.", "Ideeën")
     else:
         try:
             current_folder_id = int(folder_id)
@@ -882,10 +900,15 @@ elif page == "Ideeën":
                     st.caption("Nog geen reacties.")
                 for comment in idea["comments"]:
                     st.markdown(f"**{comment['player_name']}**  \n{comment['body']}")
-                body = st.text_input("Reageer", key=f"comment_{idea['id']}")
-                if st.button("Plaatsen", key=f"comment_btn_{idea['id']}", disabled=not body):
-                    db.add_comment(idea["id"], player["id"], body)
-                    finish_action("Reactie geplaatst.", "Ideeën", folder=folder["id"])
+                with st.form(f"comment_form_{idea['id']}", border=False):
+                    body = st.text_input("Reageer", key=f"comment_{idea['id']}")
+                    comment_submitted = st.form_submit_button("Plaatsen")
+                if comment_submitted:
+                    if not body.strip():
+                        st.error("Vul eerst een reactie in.")
+                    else:
+                        db.add_comment(idea["id"], player["id"], body)
+                        finish_action("Reactie geplaatst.", "Ideeën", folder=folder["id"])
                 if is_admin(player):
                     statuses = ["Nieuw idee", "In bespreking", "Gekozen", "Uitgevoerd", "Geparkeerd", "Niet uitvoeren"]
                     current_index = statuses.index(idea["status"]) if idea["status"] in statuses else 0
@@ -898,17 +921,23 @@ elif page == "Ideeën":
             state_key = f"show_add_idea_form_{folder['id']}"
             st.session_state[state_key] = not st.session_state.get(state_key, False)
         if st.session_state.get(f"show_add_idea_form_{folder['id']}"):
-            title = st.text_input("Titel van het idee", key=f"folder_idea_title_{folder['id']}")
-            description = st.text_area("Beschrijving", key=f"folder_idea_desc_{folder['id']}")
-            points = st.number_input( "Voorstel voor punten", min_value=0.0, value=0.0, step=0.1, format="%.1f", key=f"folder_idea_points_{folder['id']}")
-            col1, col2 = st.columns(2)
-            if col1.button("Idee opslaan", key=f"folder_idea_save_{folder['id']}", disabled=not title, use_container_width=True):
-                db.add_idea(folder["id"], player["id"], title, description, points)
-                st.session_state[f"show_add_idea_form_{folder['id']}"] = False
-                finish_action("Idee toegevoegd.", "Ideeën", folder=folder["id"])
-            if col2.button("Annuleren", key=f"folder_idea_cancel_{folder['id']}", use_container_width=True):
+            with st.form(f"folder_idea_form_{folder['id']}", border=False):
+                title = st.text_input("Titel van het idee", key=f"folder_idea_title_{folder['id']}")
+                description = st.text_area("Beschrijving", key=f"folder_idea_desc_{folder['id']}")
+                points = st.number_input("Voorstel voor punten", min_value=0.0, value=0.0, step=0.1, format="%.1f", key=f"folder_idea_points_{folder['id']}")
+                col1, col2 = st.columns(2)
+                save_idea = col1.form_submit_button("Idee opslaan", use_container_width=True)
+                cancel_idea = col2.form_submit_button("Annuleren", use_container_width=True)
+            if cancel_idea:
                 st.session_state[f"show_add_idea_form_{folder['id']}"] = False
                 st.rerun()
+            if save_idea:
+                if not title.strip():
+                    st.error("Vul een titel in.")
+                else:
+                    db.add_idea(folder["id"], player["id"], title, description, points)
+                    st.session_state[f"show_add_idea_form_{folder['id']}"] = False
+                    finish_action("Idee toegevoegd.", "Ideeën", folder=folder["id"])
 
 elif page == "Ranglijst punten":
     render_page_title("Ranglijst punten")
@@ -1041,17 +1070,19 @@ elif page == "Teamrekening":
                 finish_action("Uitgave verwijderd.", "Teamrekening")
 
     with tabs[1]:
-        expense_date = st.date_input("Datum", date.today(), key="money_expense_date")
-        amount = st.number_input("Bedrag (€)", min_value=0.0, step=1.0, key="money_expense_amount")
-        description = st.text_input("Omschrijving", key="money_expense_desc")
-        category = st.text_input("Categorie", placeholder="Bijv. boodschappen, materiaal, teamactiviteit", key="money_expense_category")
-        default_index = player_names.index(player["name"]) if player["name"] in player_names else 0
-        paid_by_name = st.selectbox("Betaald door", player_names, index=default_index, key="money_expense_paid_by")
         receipt_choice = st.radio("Bonnetje", ["Ik heb een bonnetje", "Bonnetje kwijt"], horizontal=True, key="money_expense_receipt")
-        upload = None
-        if receipt_choice == "Ik heb een bonnetje":
-            upload = st.file_uploader("Upload bonnetje", type=["png", "jpg", "jpeg", "pdf"], key="money_expense_upload")
-        if st.button("Uitgave indienen", type="primary", use_container_width=True, key="money_expense_save"):
+        with st.form("add_expense_form", border=False):
+            expense_date = st.date_input("Datum", date.today(), key="money_expense_date")
+            amount = st.number_input("Bedrag (€)", min_value=0.0, step=1.0, key="money_expense_amount")
+            description = st.text_input("Omschrijving", key="money_expense_desc")
+            category = st.text_input("Categorie", placeholder="Bijv. boodschappen, materiaal, teamactiviteit", key="money_expense_category")
+            default_index = player_names.index(player["name"]) if player["name"] in player_names else 0
+            paid_by_name = st.selectbox("Betaald door", player_names, index=default_index, key="money_expense_paid_by")
+            upload = None
+            if receipt_choice == "Ik heb een bonnetje":
+                upload = st.file_uploader("Upload bonnetje", type=["png", "jpg", "jpeg", "pdf"], key="money_expense_upload")
+            expense_submitted = st.form_submit_button("Uitgave indienen", type="primary", use_container_width=True)
+        if expense_submitted:
             if amount <= 0 or not description or not category:
                 st.error("Vul datum, bedrag, omschrijving en categorie in.")
             elif receipt_choice == "Ik heb een bonnetje" and upload is None:
@@ -1074,12 +1105,14 @@ elif page == "Teamrekening":
                 finish_action("Uitgave ingediend. Kieft of Beheerder kan deze nu controleren.", "Teamrekening")
 
     with tabs[2]:
-        income_date = st.date_input("Datum", date.today(), key="money_income_date")
-        amount = st.number_input("Bedrag (€)", min_value=0.0, step=1.0, key="money_income_amount")
-        category = st.text_input("Categorie", placeholder="Bijv. sponsor, verkoop, actie", key="money_income_category")
-        description = st.text_input("Waar komt het bedrag vandaan?", key="money_income_desc")
-        paid_by_name = st.selectbox("Ontvangen door", player_names, index=0, key="money_income_paid_by")
-        if st.button("Inkomst opslaan", type="primary", use_container_width=True, key="money_income_save"):
+        with st.form("add_income_form", border=False):
+            income_date = st.date_input("Datum", date.today(), key="money_income_date")
+            amount = st.number_input("Bedrag (€)", min_value=0.0, step=1.0, key="money_income_amount")
+            category = st.text_input("Categorie", placeholder="Bijv. sponsor, verkoop, actie", key="money_income_category")
+            description = st.text_input("Waar komt het bedrag vandaan?", key="money_income_desc")
+            paid_by_name = st.selectbox("Ontvangen door", player_names, index=0, key="money_income_paid_by")
+            income_submitted = st.form_submit_button("Inkomst opslaan", type="primary", use_container_width=True)
+        if income_submitted:
             if amount <= 0 or not description:
                 st.error("Vul minimaal bedrag en omschrijving in.")
             else:
