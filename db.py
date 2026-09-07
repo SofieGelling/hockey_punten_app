@@ -136,6 +136,11 @@ def insert_id(con, sql, params):
 
 def init_db():
     with connection() as con:
+        # Streamlit can start more than one worker at once. Serialise the first
+        # PostgreSQL schema setup so concurrent starts cannot create the same
+        # table or index twice.
+        if using_postgres():
+            con.execute("SELECT pg_advisory_xact_lock(81927463)")
         schema = """
         CREATE TABLE IF NOT EXISTS players(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
