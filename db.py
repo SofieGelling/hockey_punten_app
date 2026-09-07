@@ -9,9 +9,11 @@ from urllib.parse import quote_plus
 try:
     import psycopg2
     from psycopg2.extras import DictCursor
+    from psycopg2.pool import ThreadedConnectionPool
 except ImportError:  # Local SQLite use does not require PostgreSQL dependencies.
     psycopg2 = None
     DictCursor = None
+    ThreadedConnectionPool = None
 
 INTEGRITY_ERRORS = (sqlite3.IntegrityError,) + ((psycopg2.IntegrityError,) if psycopg2 else ())
 
@@ -19,29 +21,36 @@ INTEGRITY_ERRORS = (sqlite3.IntegrityError,) + ((psycopg2.IntegrityError,) if ps
 # available. The default retains the existing local database location.
 DB_PATH = Path(os.environ.get("TEAMAPP_DB_PATH", Path(__file__).with_name("teamapp_v2_5.db"))).expanduser()
 DATABASE_URL = None
+POSTGRES_POOL = None
+INITIALIZED_DATABASE = None
 
 
 def configure_database(config=None):
     """Configure PostgreSQL from Streamlit Secrets, otherwise retain SQLite."""
-    global DATABASE_URL
+    global DATABASE_URL, INITIALIZED_DATABASE, POSTGRES_POOL
+    new_database_url = None
     if not config:
-        DATABASE_URL = None
-        return
+        new_database_url = None
+    elif isinstance(config, str):
+        new_database_url = config
+    else:
+        host = config.get("host")
+        password = config.get("password")
+        if not host or not password:
+            raise ValueError("Vul host en password in bij de PostgreSQL Streamlit Secrets.")
 
-    if isinstance(config, str):
-        DATABASE_URL = config
-        return
+        username = quote_plus(str(config.get("username", "postgres")))
+        password = quote_plus(str(password))
+        database = quote_plus(str(config.get("database", "postgres")))
+        port = str(config.get("port", "5432"))
+        new_database_url = f"postgresql://{username}:{password}@{host}:{port}/{database}"
 
-    host = config.get("host")
-    password = config.get("password")
-    if not host or not password:
-        raise ValueError("Vul host en password in bij de PostgreSQL Streamlit Secrets.")
-
-    username = quote_plus(str(config.get("username", "postgres")))
-    password = quote_plus(str(password))
-    database = quote_plus(str(config.get("database", "postgres")))
-    port = str(config.get("port", "5432"))
-    DATABASE_URL = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+    if DATABASE_URL != new_database_url:
+        if POSTGRES_POOL is not None:
+            POSTGRES_POOL.closeall()
+        POSTGRES_POOL = None
+        INITIALIZED_DATABASE = None
+        DATABASE_URL = new_database_url
 
 
 def using_postgres():
@@ -80,10 +89,15 @@ class PostgresConnection:
 
 @contextmanager
 def connection():
+    raw_connection = None
     if using_postgres():
         if psycopg2 is None:
             raise RuntimeError("PostgreSQL-ondersteuning ontbreekt. Installeer psycopg2-binary.")
-        con = PostgresConnection(psycopg2.connect(DATABASE_URL, connect_timeout=15, sslmode="require"))
+        global POSTGRES_POOL
+        if POSTGRES_POOL is None:
+            POSTGRES_POOL = ThreadedConnectionPool(1, 5, DATABASE_URL, connect_timeout=15, sslmode="require")
+        raw_connection = POSTGRES_POOL.getconn()
+        con = PostgresConnection(raw_connection)
     else:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         con = sqlite3.connect(DB_PATH, timeout=30)
@@ -94,8 +108,15 @@ def connection():
     try:
         yield con
         con.commit()
+    except Exception:
+        if raw_connection is not None:
+            raw_connection.rollback()
+        raise
     finally:
-        con.close()
+        if raw_connection is not None:
+            POSTGRES_POOL.putconn(raw_connection)
+        else:
+            con.close()
 
 
 def rows(cur):
@@ -135,6 +156,11 @@ def insert_id(con, sql, params):
 
 
 def init_db():
+    global INITIALIZED_DATABASE
+    database_key = DATABASE_URL if using_postgres() else str(DB_PATH)
+    if INITIALIZED_DATABASE == database_key:
+        return
+
     with connection() as con:
         # Streamlit can start more than one worker at once. Serialise the first
         # PostgreSQL schema setup so concurrent starts cannot create the same
@@ -362,6 +388,8 @@ def init_db():
                     (presence_field_id, "Anderhalve dag", 9),
                 ],
             )
+
+    INITIALIZED_DATABASE = database_key
 
 def get_players():
     with connection() as con:
