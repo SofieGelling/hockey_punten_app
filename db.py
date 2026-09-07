@@ -1,9 +1,13 @@
 import json
 import os
 import sqlite3
+import time
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import date, datetime, timedelta
+from functools import wraps
 from pathlib import Path
+from threading import RLock
 from urllib.parse import quote_plus
 
 try:
@@ -33,6 +37,51 @@ PERFORMANCE_INDEXES = """
     CREATE INDEX IF NOT EXISTS idx_transactions_status_date ON team_transactions(review_status,transaction_date DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_submitter ON team_transactions(submitted_by,review_status);
 """
+READ_CACHE_TTL_SECONDS = 20
+READ_CACHE = {}
+READ_CACHE_LOCK = RLock()
+
+
+def _freeze_cache_value(value):
+    if isinstance(value, dict):
+        return tuple(sorted((key, _freeze_cache_value(item)) for key, item in value.items()))
+    if isinstance(value, (list, tuple, set)):
+        return tuple(_freeze_cache_value(item) for item in value)
+    return value
+
+
+def cached_read(function):
+    """Reuse recent read results while returning copies safe for UI rendering."""
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        key = (function.__name__, _freeze_cache_value(args), _freeze_cache_value(kwargs))
+        now = time.monotonic()
+        with READ_CACHE_LOCK:
+            cached = READ_CACHE.get(key)
+            if cached and now - cached[0] < READ_CACHE_TTL_SECONDS:
+                return deepcopy(cached[1])
+
+        result = function(*args, **kwargs)
+        with READ_CACHE_LOCK:
+            READ_CACHE[key] = (now, deepcopy(result))
+        return result
+
+    return wrapper
+
+
+def clear_read_cache():
+    with READ_CACHE_LOCK:
+        READ_CACHE.clear()
+
+
+def invalidate_after_write(function):
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        result = function(*args, **kwargs)
+        clear_read_cache()
+        return result
+
+    return wrapper
 
 
 def configure_database(config=None):
@@ -406,17 +455,20 @@ def init_db():
 
     INITIALIZED_DATABASE = database_key
 
+@cached_read
 def get_players():
     with connection() as con:
         return rows(con.execute("SELECT * FROM players WHERE active=1 ORDER BY CASE WHEN role='admin' THEN 0 ELSE 1 END,name"))
 
 
+@cached_read
 def get_player(pid):
     with connection() as con:
         row = con.execute("SELECT * FROM players WHERE id=?", (pid,)).fetchone()
         return dict(row) if row else None
 
 
+@cached_read
 def get_activity_types(include_inactive=False):
     with connection() as con:
         if include_inactive:
@@ -424,6 +476,7 @@ def get_activity_types(include_inactive=False):
         return rows(con.execute("SELECT * FROM activity_types WHERE active=1 ORDER BY id"))
 
 
+@cached_read
 def get_fields(tid):
     with connection() as con:
         fields = rows(con.execute("SELECT * FROM activity_fields WHERE activity_type_id=? ORDER BY id", (tid,)))
@@ -445,6 +498,7 @@ def get_fields(tid):
         return fields
 
 
+@invalidate_after_write
 def add_activity(player_id, type_id, activity_date, description, field_values, points):
     with connection() as con:
         con.execute(
@@ -453,6 +507,7 @@ def add_activity(player_id, type_id, activity_date, description, field_values, p
         )
 
 
+@invalidate_after_write
 def update_activity(activity_id, player_id, type_id, activity_date, description, field_values, points):
     with connection() as con:
         con.execute(
@@ -473,12 +528,14 @@ def update_activity(activity_id, player_id, type_id, activity_date, description,
         )
 
 
+@invalidate_after_write
 def delete_activity(activity_id):
     with connection() as con:
         con.execute("DELETE FROM activity_change_requests WHERE activity_id=?", (activity_id,))
         con.execute("DELETE FROM activities WHERE id=?", (activity_id,))
 
 
+@cached_read
 def get_activities(player_id=None, limit=None):
     filters = []
     params = []
@@ -499,6 +556,7 @@ def get_activities(player_id=None, limit=None):
         return rows(con.execute(sql, params))
 
 
+@cached_read
 def leaderboard():
     with connection() as con:
         return rows(
@@ -515,6 +573,7 @@ def leaderboard():
         )
 
 
+@cached_read
 def breakdown(pid):
     with connection() as con:
         return rows(
@@ -531,6 +590,7 @@ def breakdown(pid):
         )
 
 
+@invalidate_after_write
 def request_change(activity_id, player_id, text):
     with connection() as con:
         con.execute(
@@ -539,6 +599,7 @@ def request_change(activity_id, player_id, text):
         )
 
 
+@cached_read
 def get_change_requests(status="pending"):
     with connection() as con:
         return rows(
@@ -557,11 +618,13 @@ def get_change_requests(status="pending"):
         )
 
 
+@invalidate_after_write
 def resolve_change_request(rid, status):
     with connection() as con:
         con.execute("UPDATE activity_change_requests SET status=? WHERE id=?", (status, rid))
 
 
+@cached_read
 def get_tasks(include_past=False):
     if include_past:
         where = ""
@@ -605,15 +668,18 @@ def get_tasks(include_past=False):
         return tasks
 
 
+@cached_read
 def get_task(task_id):
     tasks = get_tasks(include_past=True)
     return next((task for task in tasks if task["id"] == task_id), None)
 
 
+@cached_read
 def tasks_for_player(pid, include_past=False):
     return [task for task in get_tasks(include_past) if any(a["player_id"] == pid for a in task["assignments"])]
 
 
+@invalidate_after_write
 def set_task_response(task_id, pid, response, reason=""):
     with connection() as con:
         con.execute(
@@ -622,11 +688,13 @@ def set_task_response(task_id, pid, response, reason=""):
         )
 
 
+@invalidate_after_write
 def set_assignment_completed(task_id, pid, value=True):
     with connection() as con:
         con.execute("UPDATE task_assignments SET completed=? WHERE task_id=? AND player_id=?", (1 if value else 0, task_id, pid))
 
 
+@invalidate_after_write
 def add_task(title, task_date, task_time, type_id, category, description, player_ids):
     with connection() as con:
         task_id = insert_id(
@@ -638,6 +706,7 @@ def add_task(title, task_date, task_time, type_id, category, description, player
             con.execute("INSERT INTO task_assignments(task_id,player_id) VALUES(?,?)", (task_id, pid))
 
 
+@invalidate_after_write
 def update_task(task_id, title, task_date, task_time, type_id, category, description, player_ids):
     with connection() as con:
         con.execute(
@@ -661,12 +730,14 @@ def update_task(task_id, title, task_date, task_time, type_id, category, descrip
             con.execute("INSERT INTO task_assignments(task_id,player_id) VALUES(?,?)", (task_id, pid))
 
 
+@invalidate_after_write
 def delete_task(task_id):
     with connection() as con:
         con.execute("DELETE FROM task_assignments WHERE task_id=?", (task_id,))
         con.execute("DELETE FROM tasks WHERE id=?", (task_id,))
 
 
+@cached_read
 def get_folders():
     with connection() as con:
         return rows(
@@ -683,6 +754,7 @@ def get_folders():
         )
 
 
+@invalidate_after_write
 def add_folder(name, icon, created_by):
     try:
         with connection() as con:
@@ -694,6 +766,7 @@ def add_folder(name, icon, created_by):
         raise ValueError("Er bestaat al een brainstormmap met deze naam.") from exc
 
 
+@cached_read
 def get_ideas(folder_id, viewer_id=None):
     viewer_id = viewer_id or -1
     with connection() as con:
@@ -742,6 +815,7 @@ def get_ideas(folder_id, viewer_id=None):
         return ideas
 
 
+@invalidate_after_write
 def add_idea(folder_id, author_id, title, description, points):
     with connection() as con:
         con.execute(
@@ -750,6 +824,7 @@ def add_idea(folder_id, author_id, title, description, points):
         )
 
 
+@invalidate_after_write
 def cast_idea_vote(idea_id, pid, vote):
     vote = int(vote)
     if vote not in (-1, 1):
@@ -764,21 +839,25 @@ def cast_idea_vote(idea_id, pid, vote):
             con.execute("INSERT INTO idea_votes(idea_id,player_id,vote) VALUES(?,?,?)", (idea_id, pid, vote))
 
 
+@invalidate_after_write
 def add_comment(idea_id, pid, body):
     with connection() as con:
         con.execute("INSERT INTO idea_comments(idea_id,player_id,body) VALUES(?,?,?)", (idea_id, pid, clean_text(body)))
 
 
+@invalidate_after_write
 def set_idea_status(idea_id, status):
     with connection() as con:
         con.execute("UPDATE ideas SET status=? WHERE id=?", (status, idea_id))
 
 
+@cached_read
 def notifications(pid):
     with connection() as con:
         return rows(con.execute("SELECT * FROM notifications WHERE player_id=? ORDER BY id DESC", (pid,)))
 
 
+@invalidate_after_write
 def add_activity_type(name, icon, category, base_points):
     try:
         with connection() as con:
@@ -790,6 +869,7 @@ def add_activity_type(name, icon, category, base_points):
         raise ValueError("Er bestaat al een activiteitstype met deze naam.") from exc
 
 
+@invalidate_after_write
 def delete_activity_type(activity_type_id):
     with connection() as con:
         task_count = con.execute("SELECT COUNT(*) FROM tasks WHERE activity_type_id=?", (activity_type_id,)).fetchone()[0]
@@ -804,11 +884,13 @@ def delete_activity_type(activity_type_id):
             con.execute("UPDATE activity_types SET active=0 WHERE id=?", (activity_type_id,))
 
 
+@invalidate_after_write
 def update_activity_base_points(tid, pts):
     with connection() as con:
         con.execute("UPDATE activity_types SET base_points=? WHERE id=?", (float(pts), tid))
 
 
+@invalidate_after_write
 def add_select_field(tid, label, options):
     with connection() as con:
         field_id = insert_id(con, "INSERT INTO activity_fields(activity_type_id,label,field_type) VALUES(?,?,?)", (tid, clean_text(label), "select"))
@@ -816,6 +898,7 @@ def add_select_field(tid, label, options):
             con.execute("INSERT INTO activity_field_options(field_id,label,points) VALUES(?,?,?)", (field_id, clean_text(name), float(pts)))
 
 
+@invalidate_after_write
 def update_select_field(field_id, label, options):
     with connection() as con:
         con.execute("UPDATE activity_fields SET label=? WHERE id=?", (clean_text(label), field_id))
@@ -827,12 +910,14 @@ def update_select_field(field_id, label, options):
             )
 
 
+@invalidate_after_write
 def delete_select_field(field_id):
     with connection() as con:
         con.execute("DELETE FROM activity_field_options WHERE field_id=?", (field_id,))
         con.execute("DELETE FROM activity_fields WHERE id=?", (field_id,))
 
 
+@cached_read
 def get_transaction(transaction_id, include_receipt_data=False):
     fields = "t.*"
     if not include_receipt_data:
@@ -856,6 +941,7 @@ def get_transaction(transaction_id, include_receipt_data=False):
         return dict(row) if row else None
 
 
+@invalidate_after_write
 def add_transaction(
     transaction_type,
     transaction_date,
@@ -904,6 +990,7 @@ def add_transaction(
         )
 
 
+@invalidate_after_write
 def update_transaction(
     transaction_id,
     transaction_date,
@@ -984,6 +1071,7 @@ def update_transaction(
         )
 
 
+@invalidate_after_write
 def set_transaction_review(transaction_id, review_status, reviewer_id):
     if review_status not in ("pending", "approved", "rejected"):
         raise ValueError("Ongeldige reviewstatus.")
@@ -996,11 +1084,13 @@ def set_transaction_review(transaction_id, review_status, reviewer_id):
         )
 
 
+@invalidate_after_write
 def delete_transaction(transaction_id):
     with connection() as con:
         con.execute("DELETE FROM team_transactions WHERE id=?", (transaction_id,))
 
 
+@cached_read
 def get_transactions(limit=None, transaction_type=None, submitted_by=None, paid_by=None, statuses=None, include_receipt_data=False):
     fields = "t.*"
     if not include_receipt_data:
@@ -1038,6 +1128,7 @@ def get_transactions(limit=None, transaction_type=None, submitted_by=None, paid_
         return rows(con.execute(sql, params))
 
 
+@cached_read
 def money_summary(statuses=None):
     filters = []
     params = []
@@ -1062,6 +1153,7 @@ def money_summary(statuses=None):
         return {"income": income, "expense": expense, "balance": income - expense}
 
 
+@cached_read
 def get_monthly_financials(statuses=None):
     filters = []
     params = []
@@ -1097,6 +1189,7 @@ def get_monthly_financials(statuses=None):
     return monthly_rows
 
 
+@cached_read
 def get_balance_history(statuses=None):
     transactions = get_transactions(statuses=statuses)
     history = []
