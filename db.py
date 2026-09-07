@@ -289,6 +289,14 @@ def init_db():
             key TEXT PRIMARY KEY,
             value TEXT
         );
+        CREATE INDEX IF NOT EXISTS idx_activities_player_date ON activities(player_id,activity_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_activities_type ON activities(activity_type_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_date ON tasks(task_date);
+        CREATE INDEX IF NOT EXISTS idx_task_assignments_task ON task_assignments(task_id,player_id);
+        CREATE INDEX IF NOT EXISTS idx_ideas_folder_date ON ideas(folder_id,created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_idea_comments_idea ON idea_comments(idea_id,id);
+        CREATE INDEX IF NOT EXISTS idx_transactions_status_date ON team_transactions(review_status,transaction_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_transactions_submitter ON team_transactions(submitted_by,review_status);
         """
         if using_postgres():
             schema = (
@@ -412,8 +420,21 @@ def get_activity_types(include_inactive=False):
 def get_fields(tid):
     with connection() as con:
         fields = rows(con.execute("SELECT * FROM activity_fields WHERE activity_type_id=? ORDER BY id", (tid,)))
+        if not fields:
+            return fields
+        field_ids = [field["id"] for field in fields]
+        placeholders = ",".join(["?"] * len(field_ids))
+        options = rows(
+            con.execute(
+                f"SELECT * FROM activity_field_options WHERE field_id IN ({placeholders}) ORDER BY id",
+                field_ids,
+            )
+        )
+        options_by_field = {field_id: [] for field_id in field_ids}
+        for option in options:
+            options_by_field[option["field_id"]].append(option)
         for field in fields:
-            field["options"] = rows(con.execute("SELECT * FROM activity_field_options WHERE field_id=? ORDER BY id", (field["id"],)))
+            field["options"] = options_by_field[field["id"]]
         return fields
 
 
@@ -553,19 +574,27 @@ def get_tasks(include_past=False):
                 """ % where
             )
         )
-        for task in tasks:
-            task["assignments"] = rows(
-                con.execute(
-                    """
-                    SELECT x.*,p.name
-                    FROM task_assignments x
-                    JOIN players p ON p.id=x.player_id
-                    WHERE x.task_id=?
-                    ORDER BY p.name
-                    """,
-                    (task["id"],),
-                )
+        if not tasks:
+            return tasks
+        task_ids = [task["id"] for task in tasks]
+        placeholders = ",".join(["?"] * len(task_ids))
+        assignments = rows(
+            con.execute(
+                f"""
+                SELECT x.*,p.name
+                FROM task_assignments x
+                JOIN players p ON p.id=x.player_id
+                WHERE x.task_id IN ({placeholders})
+                ORDER BY p.name
+                """,
+                task_ids,
+            )
         )
+        assignments_by_task = {task_id: [] for task_id in task_ids}
+        for assignment in assignments:
+            assignments_by_task[assignment["task_id"]].append(assignment)
+        for task in tasks:
+            task["assignments"] = assignments_by_task[task["id"]]
         return tasks
 
 
@@ -682,19 +711,27 @@ def get_ideas(folder_id, viewer_id=None):
                 (viewer_id, folder_id),
             )
         )
-        for idea in ideas:
-            idea["comments"] = rows(
-                con.execute(
-                    """
-                    SELECT c.*,p.name player_name
-                    FROM idea_comments c
-                    JOIN players p ON p.id=c.player_id
-                    WHERE c.idea_id=?
-                    ORDER BY c.id
-                    """,
-                    (idea["id"],),
-                )
+        if not ideas:
+            return ideas
+        idea_ids = [idea["id"] for idea in ideas]
+        placeholders = ",".join(["?"] * len(idea_ids))
+        comments = rows(
+            con.execute(
+                f"""
+                SELECT c.*,p.name player_name
+                FROM idea_comments c
+                JOIN players p ON p.id=c.player_id
+                WHERE c.idea_id IN ({placeholders})
+                ORDER BY c.id
+                """,
+                idea_ids,
             )
+        )
+        comments_by_idea = {idea_id: [] for idea_id in idea_ids}
+        for comment in comments:
+            comments_by_idea[comment["idea_id"]].append(comment)
+        for idea in ideas:
+            idea["comments"] = comments_by_idea[idea["id"]]
         return ideas
 
 
