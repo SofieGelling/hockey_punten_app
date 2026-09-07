@@ -23,6 +23,16 @@ DB_PATH = Path(os.environ.get("TEAMAPP_DB_PATH", Path(__file__).with_name("teama
 DATABASE_URL = None
 POSTGRES_POOL = None
 INITIALIZED_DATABASE = None
+PERFORMANCE_INDEXES = """
+    CREATE INDEX IF NOT EXISTS idx_activities_player_date ON activities(player_id,activity_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_activities_type ON activities(activity_type_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_date ON tasks(task_date);
+    CREATE INDEX IF NOT EXISTS idx_task_assignments_task ON task_assignments(task_id,player_id);
+    CREATE INDEX IF NOT EXISTS idx_ideas_folder_date ON ideas(folder_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_idea_comments_idea ON idea_comments(idea_id,id);
+    CREATE INDEX IF NOT EXISTS idx_transactions_status_date ON team_transactions(review_status,transaction_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_submitter ON team_transactions(submitted_by,review_status);
+"""
 
 
 def configure_database(config=None):
@@ -289,14 +299,6 @@ def init_db():
             key TEXT PRIMARY KEY,
             value TEXT
         );
-        CREATE INDEX IF NOT EXISTS idx_activities_player_date ON activities(player_id,activity_date DESC);
-        CREATE INDEX IF NOT EXISTS idx_activities_type ON activities(activity_type_id);
-        CREATE INDEX IF NOT EXISTS idx_tasks_date ON tasks(task_date);
-        CREATE INDEX IF NOT EXISTS idx_task_assignments_task ON task_assignments(task_id,player_id);
-        CREATE INDEX IF NOT EXISTS idx_ideas_folder_date ON ideas(folder_id,created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_idea_comments_idea ON idea_comments(idea_id,id);
-        CREATE INDEX IF NOT EXISTS idx_transactions_status_date ON team_transactions(review_status,transaction_date DESC);
-        CREATE INDEX IF NOT EXISTS idx_transactions_submitter ON team_transactions(submitted_by,review_status);
         """
         if using_postgres():
             schema = (
@@ -307,6 +309,11 @@ def init_db():
                 .replace("receipt_data BLOB", "receipt_data BYTEA")
             )
         con.executescript(schema)
+
+        index_migration = con.execute("SELECT value FROM app_meta WHERE key='performance_indexes_v1'").fetchone()
+        if not index_migration:
+            con.executescript(PERFORMANCE_INDEXES)
+            con.execute("INSERT INTO app_meta(key,value) VALUES(?,?)", ("performance_indexes_v1", "done"))
 
         ensure_column(con, "activities", "field_values_json", "TEXT")
         ensure_column(con, "activities", "points", "INTEGER NOT NULL DEFAULT 0")
