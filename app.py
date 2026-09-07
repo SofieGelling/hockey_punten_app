@@ -538,9 +538,12 @@ with st.sidebar:
         st.query_params.clear()
         st.rerun()
 
-lb = db.leaderboard()
+leaderboard_pages = {"Home", "Ranglijst punten", "Profiel"}
+player_picker_pages = {"Toevoegen", "Activiteiten", "Teamrekening", "Instellingen"}
+
+lb = db.leaderboard() if page in leaderboard_pages else []
 my = next((entry for entry in lb if entry["id"] == player["id"]), None)
-players = db.get_players()
+players = db.get_players() if page in player_picker_pages else []
 player_names = [entry["name"] for entry in players]
 player_name_to_id = {entry["name"]: entry["id"] for entry in players}
 
