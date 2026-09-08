@@ -161,6 +161,15 @@ def guess_mime(file_name):
     return mime or "application/octet-stream"
 
 
+def receipt_bytes(receipt_data):
+    """Convert PostgreSQL receipt buffers to bytes accepted by Streamlit."""
+    if isinstance(receipt_data, bytes):
+        return receipt_data
+    if isinstance(receipt_data, memoryview):
+        return receipt_data.tobytes()
+    return bytes(receipt_data)
+
+
 def render_page_title(text):
     st.markdown(f'<div class="page-title">{text}</div>', unsafe_allow_html=True)
 
@@ -227,7 +236,7 @@ def build_receipts_zip(transactions):
                 continue
             file_name = transaction.get("receipt_name") or f"bonnetje-{transaction['id']}.bin"
             archive_name = f"{transaction['transaction_date']}_{transaction.get('paid_by_name') or 'team'}_{transaction['id']}_{file_name}"
-            archive.writestr(archive_name, transaction["receipt_data"])
+            archive.writestr(archive_name, receipt_bytes(transaction["receipt_data"]))
             added += 1
     if buffer.getbuffer().nbytes == 0:
         return None
@@ -323,7 +332,7 @@ def render_transaction_card(transaction, show_receipt=False, receipt_key_prefix=
     if show_receipt and transaction.get("receipt_data"):
         st.download_button(
             "Bonnetje bekijken",
-            data=transaction["receipt_data"],
+            data=receipt_bytes(transaction["receipt_data"]),
             file_name=transaction.get("receipt_name") or f"bonnetje-{transaction['id']}",
             mime=guess_mime(transaction.get("receipt_name")),
             key=f"{receipt_key_prefix}_{transaction['id']}",
@@ -1143,7 +1152,7 @@ elif page == "Teamrekening":
             month_options = sorted({row["transaction_date"][:7] for row in all_finance_rows}, reverse=True)
             year_options = sorted({row["transaction_date"][:4] for row in all_finance_rows}, reverse=True)
             st.markdown('<div class="section">Downloads en bonnetjes</div>', unsafe_allow_html=True)
-            export_mode = st.segmented_control("Download overzicht", export_modes, default="Maand", key="finance_export_mode")
+            export_mode = st.segmented_control("Download overzicht", export_modes, default="Totaal", key="finance_export_mode")
             selected_month = None
             selected_year = None
             if export_mode == "Maand":
@@ -1200,7 +1209,7 @@ elif page == "Teamrekening":
                 if transaction.get("receipt_data"):
                     st.download_button(
                         "Bonnetje bekijken",
-                        data=transaction["receipt_data"],
+                        data=receipt_bytes(transaction["receipt_data"]),
                         file_name=transaction.get("receipt_name") or f"bonnetje-{transaction['id']}",
                         mime=guess_mime(transaction.get("receipt_name")),
                         key=f"receipt_overview_{transaction['id']}",
@@ -1231,7 +1240,7 @@ elif page == "Teamrekening":
                 if transaction.get("receipt_data"):
                     st.download_button(
                         "Bonnetje openen",
-                        data=transaction["receipt_data"],
+                        data=receipt_bytes(transaction["receipt_data"]),
                         file_name=transaction.get("receipt_name") or f"bonnetje-{transaction['id']}",
                         mime=guess_mime(transaction.get("receipt_name")),
                         key=f"review_receipt_open_{transaction['id']}",
@@ -1262,7 +1271,7 @@ elif page == "Teamrekening":
                     if transaction.get("receipt_data"):
                         st.download_button(
                             "Bonnetje bekijken",
-                            data=transaction["receipt_data"],
+                            data=receipt_bytes(transaction["receipt_data"]),
                             file_name=transaction.get("receipt_name") or f"bonnetje-{transaction['id']}",
                             mime=guess_mime(transaction.get("receipt_name")),
                             key=f"review_receipt_download_{transaction['id']}",
