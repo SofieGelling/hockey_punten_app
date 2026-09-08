@@ -216,6 +216,29 @@ def build_transactions_export(transactions):
     return pd.DataFrame(rows)
 
 
+def build_transactions_excel(export_frame):
+    """Create a formatted Excel workbook for the selected finance period."""
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        export_frame.to_excel(writer, index=False, sheet_name="Overzicht")
+        workbook = writer.book
+        worksheet = writer.sheets["Overzicht"]
+        header_format = workbook.add_format(
+            {"bold": True, "bg_color": "#EAF3FF", "font_color": "#18304F", "border": 1}
+        )
+        euro_format = workbook.add_format({"num_format": '€ #,##0.00', "align": "right"})
+
+        for column_index, column_name in enumerate(export_frame.columns):
+            values = [str(value) for value in export_frame[column_name].fillna("")]
+            width = min(max(len(column_name), *(len(value) for value in values)) + 2, 42)
+            worksheet.set_column(column_index, column_index, width)
+            worksheet.write(0, column_index, column_name, header_format)
+        worksheet.set_column(3, 3, 14, euro_format)
+        worksheet.autofilter(0, 0, len(export_frame), len(export_frame.columns) - 1)
+        worksheet.freeze_panes(1, 0)
+    return buffer.getvalue()
+
+
 def filter_transactions_for_period(transactions, mode, month_key=None, year_value=None):
     if mode == "Totaal":
         return transactions
@@ -1170,11 +1193,11 @@ elif page == "Teamrekening":
             file_suffix = selected_month or selected_year or "totaal"
             if not export_frame.empty:
                 st.download_button(
-                    "Download overzicht (CSV)",
-                    data=export_frame.to_csv(index=False).encode("utf-8"),
-                    file_name=f"teamrekening_overzicht_{file_suffix}.csv",
-                    mime="text/csv",
-                    key="finance_export_csv",
+                    "Download overzicht (Excel)",
+                    data=build_transactions_excel(export_frame),
+                    file_name=f"teamrekening_overzicht_{file_suffix}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="finance_export_excel",
                     use_container_width=True,
                 )
                 receipts_zip = build_receipts_zip(filtered_rows)
