@@ -76,9 +76,10 @@ def cached_read(function):
                 return _copy_cached_value(cached[1])
 
         result = function(*args, **kwargs)
+        cached_result = _copy_cached_value(result)
         with READ_CACHE_LOCK:
-            READ_CACHE[key] = (now, _copy_cached_value(result))
-        return result
+            READ_CACHE[key] = (now, cached_result)
+        return _copy_cached_value(cached_result)
 
     return wrapper
 
@@ -193,7 +194,7 @@ def connection():
 
 
 def rows(cur):
-    return [dict(r) for r in cur.fetchall()]
+    return [_copy_cached_value(dict(row)) for row in cur.fetchall()]
 
 
 def clean_text(value, default=""):
@@ -479,7 +480,7 @@ def get_players():
 def get_player(pid):
     with connection() as con:
         row = con.execute("SELECT * FROM players WHERE id=?", (pid,)).fetchone()
-        return dict(row) if row else None
+        return _copy_cached_value(dict(row)) if row else None
 
 
 @cached_read
@@ -952,7 +953,7 @@ def get_transaction(transaction_id, include_receipt_data=False):
             % fields,
             (transaction_id,),
         ).fetchone()
-        return dict(row) if row else None
+        return _copy_cached_value(dict(row)) if row else None
 
 
 @invalidate_after_write
