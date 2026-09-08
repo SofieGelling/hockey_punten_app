@@ -1070,7 +1070,6 @@ elif page == "Teamrekening":
                 finish_action("Uitgave verwijderd.", "Teamrekening")
 
     with tabs[1]:
-        receipt_choice = st.radio("Bonnetje", ["Ik heb een bonnetje", "Bonnetje kwijt"], horizontal=True, key="money_expense_receipt")
         with st.form("add_expense_form", border=False):
             expense_date = st.date_input("Datum", date.today(), key="money_expense_date")
             amount = st.number_input("Bedrag (€)", min_value=0.0, step=1.0, key="money_expense_amount")
@@ -1078,9 +1077,17 @@ elif page == "Teamrekening":
             category = st.text_input("Categorie", placeholder="Bijv. boodschappen, materiaal, teamactiviteit", key="money_expense_category")
             default_index = player_names.index(player["name"]) if player["name"] in player_names else 0
             paid_by_name = st.selectbox("Betaald door", player_names, index=default_index, key="money_expense_paid_by")
-            upload = None
-            if receipt_choice == "Ik heb een bonnetje":
-                upload = st.file_uploader("Upload bonnetje", type=["png", "jpg", "jpeg", "pdf"], key="money_expense_upload")
+            receipt_choice = st.radio(
+                "Bonnetje",
+                ["Ik heb een bonnetje", "Bonnetje kwijt"],
+                horizontal=True,
+                key="money_expense_receipt",
+            )
+            upload = st.file_uploader(
+                "Upload bonnetje (verplicht als je een bonnetje hebt)",
+                type=["png", "jpg", "jpeg", "pdf"],
+                key="money_expense_upload",
+            )
             expense_submitted = st.form_submit_button("Uitgave indienen", type="primary", use_container_width=True)
         if expense_submitted:
             if amount <= 0 or not description or not category:
@@ -1089,6 +1096,7 @@ elif page == "Teamrekening":
                 st.error("Upload een bonnetje of kies 'Bonnetje kwijt'.")
             else:
                 receipt_status = "uploaded" if receipt_choice == "Ik heb een bonnetje" else "lost"
+                receipt_upload = upload if receipt_choice == "Ik heb een bonnetje" else None
                 db.add_transaction(
                     "expense",
                     expense_date,
@@ -1098,8 +1106,8 @@ elif page == "Teamrekening":
                     player_name_to_id[paid_by_name],
                     submitted_by_player_id=player["id"],
                     receipt_status=receipt_status,
-                    receipt_name=upload.name if upload else None,
-                    receipt_data=upload.getvalue() if upload else None,
+                    receipt_name=receipt_upload.name if receipt_upload else None,
+                    receipt_data=receipt_upload.getvalue() if receipt_upload else None,
                     review_status="pending",
                 )
                 finish_action("Uitgave ingediend. Kieft of Beheerder kan deze nu controleren.", "Teamrekening")
