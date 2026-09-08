@@ -3,7 +3,6 @@ import os
 import sqlite3
 import time
 from contextlib import contextmanager
-from copy import deepcopy
 from datetime import date, datetime, timedelta
 from functools import wraps
 from pathlib import Path
@@ -50,6 +49,21 @@ def _freeze_cache_value(value):
     return value
 
 
+def _copy_cached_value(value):
+    """Copy query results without trying to pickle PostgreSQL receipt buffers."""
+    if isinstance(value, memoryview):
+        return value.tobytes()
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if isinstance(value, dict):
+        return {key: _copy_cached_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_copy_cached_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_copy_cached_value(item) for item in value)
+    return value
+
+
 def cached_read(function):
     """Reuse recent read results while returning copies safe for UI rendering."""
     @wraps(function)
@@ -59,11 +73,11 @@ def cached_read(function):
         with READ_CACHE_LOCK:
             cached = READ_CACHE.get(key)
             if cached and now - cached[0] < READ_CACHE_TTL_SECONDS:
-                return deepcopy(cached[1])
+                return _copy_cached_value(cached[1])
 
         result = function(*args, **kwargs)
         with READ_CACHE_LOCK:
-            READ_CACHE[key] = (now, deepcopy(result))
+            READ_CACHE[key] = (now, _copy_cached_value(result))
         return result
 
     return wrapper
